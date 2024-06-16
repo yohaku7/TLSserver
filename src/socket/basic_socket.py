@@ -17,7 +17,7 @@ class IPv4BasicSocket:
     def close(self):
         self.__sock.close()
 
-    def start(self):
+    def listen(self):
         self.__sock.listen(1)
 
     def recv(self, bufsize: int = 65565) -> bytes:
@@ -31,4 +31,4 @@ class IPv4BasicSocket:
 if __name__ == '__main__':
     s = IPv4BasicSocket()
     while True:
-        pass
+        s.listen()
