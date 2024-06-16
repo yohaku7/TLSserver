@@ -22,7 +22,7 @@ class IPv4AddrClass(Enum):
 
 class IPv4Addr:
     """IPv4。"""
-    def __init__(self, octet1: int, octet2: int, octet3: int, octet4: int) -> None:
+    def __init__(self, octet1: int, octet2: int, octet3: int, octet4: int):
         if any([o < 0 or 255 < o for o in [octet1, octet2, octet3, octet4]]):
             raise ValueError("各オクテットの値は[0, 255]でなければなりません。")
         self.__octets = [octet1, octet2, octet3, octet4]
