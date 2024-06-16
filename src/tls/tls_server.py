@@ -1,5 +1,8 @@
 # -*- coding: UTF-8 -*-
 import socket
+from src.tls.client_hello import ClientHello
+from src.tls.tls_plaintext import TLSPlaintext
+from src.tls.handshake import Handshake
 
 
 def main():
@@ -8,7 +11,15 @@ def main():
     sock.listen(1)
     conn, addr = sock.accept()
     print(f"接続：{addr}")
-    print(conn.recv(65565))
+    recv_bytes = conn.recv(65565)
+    tls_plaintext, rest = TLSPlaintext.parse(recv_bytes)
+    assert tls_plaintext.length == len(rest)
+    print(tls_plaintext)
+    handshake, rest = Handshake.parse(rest)
+    assert handshake.length == len(rest)
+    print(handshake)
+    client_hello, rest = ClientHello.parse(rest)
+    print(client_hello)
     sock.close()
 
 
