@@ -13,7 +13,7 @@ class ClientHello(HandshakeMessage):
     legacy_session_id: int
     cipher_suites: str
     legacy_compression_methods: int  # On TLS 1.3, this vector MUST contain exactly one byte, set to zero.
-    extensions: list[Extension]
+    extensions: str
 
     @staticmethod
     def parse(byte_seq: bytes) -> ("ClientHello", bytes):

@@ -1,4 +1,6 @@
 # -*- coding: UTF-8 -*-
+from __future__ import annotations
+
 from enum import IntEnum
 from dataclasses import dataclass
 from src.reader.bytes_reader import BytesReader
@@ -27,7 +29,7 @@ class TLSPlaintext:
     length: int
 
     @staticmethod
-    def parse(byte_seq: bytes) -> ("TLSPlaintext", bytes):
+    def parse(byte_seq: bytes) -> (TLSPlaintext, bytes):
         br = BytesReader(byte_seq)
         content_type = br.read_byte(1, "int")
         legacy_record_version = br.read_byte(2, "int")
