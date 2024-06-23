@@ -1,7 +1,7 @@
 # -*- coding: UTF-8 -*-
 import socket
-from src.tls.tls_plaintext import TLSPlaintext, ContentType
-from src.tls.handshake import Handshake
+from tls.tls_plaintext import TLSPlaintext, ContentType
+from tls.handshake import Handshake
 
 
 class TLSServer:

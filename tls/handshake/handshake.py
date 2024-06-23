@@ -4,9 +4,9 @@ from __future__ import annotations
 from enum import IntEnum
 from dataclasses import dataclass
 
-from src.tls.handshake_message import HandshakeMessage
-from src.reader.bytes_reader import BytesReader
-from src.tls.client_hello import ClientHello
+from tls.handshake_message import HandshakeMessage
+from reader.bytes_reader import BytesReader
+from tls.client_hello import ClientHello
 
 
 class HandshakeType(IntEnum):

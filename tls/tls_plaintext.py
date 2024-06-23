@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from enum import IntEnum
 from dataclasses import dataclass
-from src.reader.bytes_reader import BytesReader
+from reader.bytes_reader import BytesReader
 
 
 __all__ = [

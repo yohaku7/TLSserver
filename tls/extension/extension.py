@@ -3,7 +3,13 @@ from enum import IntEnum
 from dataclasses import dataclass
 from abc import ABCMeta, abstractmethod
 
-from src.reader.bytes_reader import BytesReader
+from reader.bytes_reader import BytesReader
+
+
+__all__ = [
+    "ExtensionType",
+    "Extension"
+]
 
 
 class ExtensionType(IntEnum):
@@ -45,8 +51,3 @@ class Extension(metaclass=ABCMeta):
         extension_data = br.read_variable_length(2, "raw")
         extension_data = Extension._data_parse(extension_data)  # extension_dataのパース
         return Extension(extension_type, extension_data)
-
-    @staticmethod
-    @abstractmethod
-    def _data_parse(data: bytes):
-        pass
