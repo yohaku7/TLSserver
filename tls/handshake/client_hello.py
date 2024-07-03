@@ -3,11 +3,10 @@
 from dataclasses import dataclass
 from reader.bytes_reader import BytesReader
 from tls.extension import Extension, ExtensionParser
-from tls.handshake_message import HandshakeMessage
 
 
 @dataclass
-class ClientHello(HandshakeMessage):
+class ClientHello:
     legacy_version: int  # uint16; 16bit unsigned int
     random: int  # 32byte integer
     legacy_session_id: int
@@ -24,7 +23,7 @@ class ClientHello(HandshakeMessage):
         cipher_suites = br.read_variable_length(2, "hex")
         legacy_compression_methods = br.read_variable_length(1, "int")
 
-        extensions = br.read_variable_length(2, "hex")
+        extensions = br.read_variable_length(2, "raw")
         extensions = ExtensionParser.parse(extensions)
         return ClientHello(legacy_version,
                            random,
