@@ -1,7 +1,8 @@
 # -*- coding: UTF-8 -*-
 import socket
-from tls.tls_plaintext import TLSPlaintext, ContentType
+from record import ContentType
 from tls.handshake import Handshake
+from record.tls_plaintext import TLSPlaintext
 
 
 class TLSServer:
@@ -45,4 +46,7 @@ class TLSServer:
 if __name__ == '__main__':
     server = TLSServer()
     data = server.accept_and_recv()
-    print(server.parse(data))
+    tp = TLSPlaintext.parse(data)
+    match tp.type:
+        case ContentType.handshake:
+            pass
