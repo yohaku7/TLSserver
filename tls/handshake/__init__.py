@@ -1,4 +1,5 @@
 from .handshake import Handshake
-from .type import HandshakeType
+from .parser import HandshakeParser
+from .handshake_type import HandshakeType
 
 from .client_hello import ClientHello

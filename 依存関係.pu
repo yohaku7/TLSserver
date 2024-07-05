@@ -1,0 +1,13 @@
+@startuml Handshakeの依存関係
+title Handshakeの依存関係
+
+class Handshake
+class HandshakeType
+class ClientHello
+class ServerHello
+
+
+Handshake ..> ClientHello : use
+ClientHello ..> HandshakeType : use
+
+@enduml

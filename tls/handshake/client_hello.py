@@ -1,18 +1,18 @@
 # -*- coding: UTF-8 -*-
 # RFC8446 §4.1.2 に基づいたClientHelloとエンコードされた実際のメッセージ（バイト列）。
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from reader.bytes_reader import BytesReader
-from tls.extension import Extension, ExtensionParser
+from tls.extension import Extension
 
 
 @dataclass
 class ClientHello:
-    legacy_version: int  # uint16; 16bit unsigned int
+    legacy_version: int  # uint16
     random: int  # 32byte integer
     legacy_session_id: int
     cipher_suites: str
-    legacy_compression_methods: int  # On TLS 1.3, this vector MUST contain exactly one byte, set to zero.
     extensions: list[Extension]
+    legacy_compression_methods: int = field(default=0)
 
     @staticmethod
     def parse(byte_seq: bytes) -> ("ClientHello", bytes):
@@ -24,10 +24,13 @@ class ClientHello:
         legacy_compression_methods = br.read_variable_length(1, "int")
 
         extensions = br.read_variable_length(2, "raw")
-        extensions = ExtensionParser.parse(extensions)
-        return ClientHello(legacy_version,
-                           random,
-                           legacy_session_id,
-                           cipher_suites,
-                           legacy_compression_methods,
-                           extensions), br.rest_bytes()
+        extensions = Extension.parse(extensions)
+        c = ClientHello(legacy_version,
+                        random,
+                        legacy_session_id,
+                        cipher_suites,
+                        extensions,
+                        legacy_compression_methods=legacy_compression_methods), br.rest_bytes()
+
+        print(c)
+        return c
