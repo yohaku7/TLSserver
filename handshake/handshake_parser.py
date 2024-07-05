@@ -1,5 +1,3 @@
-from reader import BytesReader
-
 from .handshake import Handshake, HandshakeType
 
 from .client_hello import ClientHello
@@ -7,10 +5,12 @@ from .client_hello import ClientHello
 
 class HandshakeParser:
     @staticmethod
-    def parse(byte_seq: bytes):
-        h, r = Handshake.parse(byte_seq)
+    def parse(byte_seq: bytes) -> (Handshake, object):
+        h, rest = Handshake.parse(byte_seq)
+        handshake_message: object
         match h.msg_type:
             case HandshakeType.client_hello:
-                c = ClientHello.parse(r)
+                handshake_message = ClientHello.parse(rest)
             case _:
                 raise ValueError("未対応のハンドシェイクです！")
+        return h, handshake_message

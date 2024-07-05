@@ -5,12 +5,14 @@ from abc import ABCMeta, abstractmethod
 
 from reader import BytesReader
 from .server_name import ServerName
-
+from .supported_versions import SupportedVersions
 
 __all__ = [
     "ExtensionType",
     "Extension"
 ]
+
+from ..handshake import HandshakeType
 
 
 class ExtensionType(IntEnum):
@@ -50,12 +52,15 @@ class Extension(metaclass=ABCMeta):
         extensions = []
         br = BytesReader(byte_seq)
         while br.rest_length != 0:
+            print(byte_seq)
             extension_type = ExtensionType(br.read_byte(2, "int"))
             extension_data: bytes = br.read_variable_length(2, "raw")
             match extension_type:
                 case ExtensionType.server_name:
                     sn = ServerName.parse(extension_data)
                     extensions.append(Extension(extension_type, sn))
+                case ExtensionType.supported_versions:
+                    sv = SupportedVersions.parse(extension_data, handshake_type=HandshakeType.server_hello)
                 case _:
                     raise ValueError("未対応のExtensionです。")
         return extensions

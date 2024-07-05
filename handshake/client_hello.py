@@ -25,12 +25,9 @@ class ClientHello:
 
         extensions = br.read_variable_length(2, "raw")
         extensions = Extension.parse(extensions)
-        c = ClientHello(legacy_version,
-                        random,
-                        legacy_session_id,
-                        cipher_suites,
-                        extensions,
-                        legacy_compression_methods=legacy_compression_methods), br.rest_bytes()
-
-        print(c)
-        return c
+        return ClientHello(legacy_version,
+                           random,
+                           legacy_session_id,
+                           cipher_suites,
+                           extensions,
+                           legacy_compression_methods=legacy_compression_methods), br.rest_bytes()
