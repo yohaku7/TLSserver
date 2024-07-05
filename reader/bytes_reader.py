@@ -18,6 +18,10 @@ class BytesReader:
         self.__bin_length = len(self.__bin_seq)
         self.__bin_next_pos = 0
 
+    @property
+    def rest_length(self):
+        return len(self.rest_bytes())
+
     def __next_bits(self, n: int) -> str:
         res = self.__bin_seq[self.__bin_next_pos:self.__bin_next_pos + n]
         self.__bin_next_pos += n
@@ -59,7 +63,15 @@ class BytesReader:
         vector_len = self.read_byte(length_header_size, "int")
         if vector_len == 0:
             return None  # 空ベクトル
-        return self.read_byte(vector_len, base)
+        vector_bits = vector_len * 8
+        self.__check_length(vector_bits)
+        res = self.__next_bits(vector_bits)
+        # 巨大な整数のときは、ここで迂回させる（オーバーフロー対策）
+        # TODO: 全関数に対してのint#to_bytesのlength引数の適用（"raw"設定時）
+        if base == "raw":
+            return int(res, 2).to_bytes(length=vector_len, byteorder="big")
+        else:
+            return self.__convert_base(res, base)
 
     def rest_bytes(self) -> bytes:
         return self.__byte_seq[self.__bin_next_pos // 8:]
