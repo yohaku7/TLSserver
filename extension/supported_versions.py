@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from tls.handshake import HandshakeType
 from reader import BytesReader
+from common import HandshakeType
 
 
 @dataclass

@@ -73,6 +73,15 @@ class BytesReader:
         else:
             return self.__convert_base(res, base)
 
+    def read_variable_length_per(self, length_header_size: int, per: int, base: Base) -> list[str | int | bytes] | None:
+        raw = self.read_variable_length(length_header_size, "raw")
+        res = []
+        for i in range(0, len(raw), per):
+            byte = raw[i:i+per]
+            binary = format(int(byte.hex(), 16), "b")
+            res.append(self.__convert_base(binary, base))
+        return res
+
     def rest_bytes(self) -> bytes:
         return self.__byte_seq[self.__bin_next_pos // 8:]
 

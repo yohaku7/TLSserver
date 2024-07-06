@@ -1,8 +1,8 @@
 # -*- coding: UTF-8 -*-
 import socket
-from record import ContentType
+
+from record import ContentType, TLSPlaintext
 from handshake import Handshake, HandshakeParser
-from record.tls_plaintext import TLSPlaintext
 
 
 class TLSServer:
@@ -48,7 +48,6 @@ if __name__ == '__main__':
     data = server.accept_and_recv()
     tp = TLSPlaintext.parse(data)
     print(tp)
-    print(tp.fragment.hex())
     match tp.type:
         case ContentType.handshake:
             hp = HandshakeParser.parse(tp.fragment)

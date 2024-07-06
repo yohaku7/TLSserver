@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 
 from reader.bytes_reader import BytesReader
-from .handshake_type import HandshakeType
+from common import HandshakeType
 
 
 @dataclass

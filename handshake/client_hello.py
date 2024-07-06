@@ -2,7 +2,7 @@
 # RFC8446 §4.1.2 に基づいたClientHelloとエンコードされた実際のメッセージ（バイト列）。
 from dataclasses import dataclass, field
 from reader.bytes_reader import BytesReader
-from tls.extension import Extension
+from extension import Extension
 
 
 @dataclass

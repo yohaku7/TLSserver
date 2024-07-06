@@ -1,4 +1,4 @@
-from content_type import ContentType
+from .content_type import ContentType
 from dataclasses import dataclass, field
 
 
