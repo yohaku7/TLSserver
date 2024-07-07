@@ -15,6 +15,7 @@ class ExtensionType(IntEnum):
     client_certificate_type = 19
     server_certificate_type = 20
     padding = 21
+    session_ticket = 35
     pre_shared_key = 41
     early_data = 42
     supported_versions = 43
@@ -25,4 +26,6 @@ class ExtensionType(IntEnum):
     post_handshake_auth = 49
     signature_algorithms_cert = 50
     key_share = 51
+
+    renegotiation_info = 0xff01  # RFC5746
     # 65535

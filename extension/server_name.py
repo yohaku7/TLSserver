@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-from reader import BytesReader
+from reader import BytesReader, BytesBuilder
 from dataclasses import dataclass, field
 
 

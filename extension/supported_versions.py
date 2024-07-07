@@ -14,8 +14,7 @@ class SupportedVersions:
         version: list[int] | int
         match handshake_type:
             case HandshakeType.client_hello:
-                version_length = br.read_byte(1, "int")
-                version = br.read_bytes(version_length, 2, "int")
+                version = br.read_variable_length_per(1, 2, "int")
             case HandshakeType.server_hello:  # and HelloRetryRequest
                 version = br.read_byte(2, "int")
             case _:
