@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from common import SignatureScheme
+from common import SignatureScheme, HandshakeType
 from reader import BytesReader
 
 
@@ -9,7 +9,7 @@ class SignatureAlgorithms:
     supported_signature_algorithms: list[SignatureScheme]
 
     @staticmethod
-    def parse(byte_seq: bytes):
+    def parse(byte_seq: bytes, handshake_type: HandshakeType):
         br = BytesReader(byte_seq)
         ssa = br.read_variable_length_per(2, 2, "int")
         print(ssa)
@@ -22,7 +22,7 @@ class SignatureAlgorithmsCert:
     supported_signature_algorithms: list[SignatureScheme]
 
     @staticmethod
-    def parse(byte_seq: bytes):
+    def parse(byte_seq: bytes, handshake_type: HandshakeType):
         br = BytesReader(byte_seq)
         ssa = br.read_variable_length_per(2, 2, "int")
         ssa = list(map(SignatureScheme, ssa))

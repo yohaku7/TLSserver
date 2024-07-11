@@ -3,20 +3,35 @@ from dataclasses import dataclass
 
 from .server_name import ServerName
 from .supported_versions import SupportedVersions
-from .extension_type import ExtensionType
 from .ec_point_formats import ECPointFormats
 from .supported_groups import SupportedGroups
 from .renegotiation_info import RenegotiationInfo
 from .session_ticket import SessionTicket
-from .key_share import KeyShareServerHello, KeyShareClientHello, KeyShareHelloRetryRequest
+from .key_share import KeyShare
+from .encrypt_then_mac import EncryptThenMAC
+from .extended_master_secret import ExtendedMasterSecret
 from .signature_algorithms import SignatureAlgorithms, SignatureAlgorithmsCert
 
 from reader import BytesReader
-from common import HandshakeType
+from common import HandshakeType, ExtensionType
 
 __all__ = [
     "Extension"
 ]
+
+extensions = {
+    ExtensionType.server_name: ServerName,
+    ExtensionType.supported_versions: SupportedVersions,
+    ExtensionType.ec_point_formats: ECPointFormats,
+    ExtensionType.supported_groups: SupportedGroups,
+    ExtensionType.session_ticket: SessionTicket,
+    ExtensionType.renegotiation_info: RenegotiationInfo,
+    ExtensionType.key_share: KeyShare,
+    ExtensionType.signature_algorithms: SignatureAlgorithms,
+    ExtensionType.signature_algorithms_cert: SignatureAlgorithmsCert,
+    ExtensionType.encrypt_then_mac: EncryptThenMAC,
+    ExtensionType.extended_master_secret: ExtendedMasterSecret,
+}
 
 
 @dataclass
@@ -26,43 +41,23 @@ class Extension:
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType | None = None) -> list["Extension"]:
-        extensions = []
+        result = []
         br = BytesReader(byte_seq)
+
         while br.rest_length != 0:
             extension_type = ExtensionType(br.read_byte(2, "int"))
             extension_data: bytes = br.read_variable_length(2, "raw")
             ext: object
-            match extension_type:
-                case ExtensionType.server_name:
-                    ext = ServerName.parse(extension_data)
-                case ExtensionType.supported_versions:
-                    ext = SupportedVersions.parse(extension_data, handshake_type=handshake_type)
-                case ExtensionType.ec_point_formats:
-                    ext = ECPointFormats.parse(extension_data)
-                case ExtensionType.supported_groups:
-                    ext = SupportedGroups.parse(extension_data)
-                case ExtensionType.session_ticket:
-                    ext = SessionTicket.parse(extension_data)
-                case ExtensionType.renegotiation_info:
-                    ext = RenegotiationInfo.parse(extension_data)
-                case ExtensionType.key_share:
-                    match handshake_type:
-                        case HandshakeType.client_hello:
-                            ext = KeyShareClientHello.parse(extension_data)
-                        case HandshakeType.server_hello:
-                            ext = KeyShareServerHello.parse(extension_data)
-                        case _:
-                            raise ValueError("HelloRetryRequestですか？key_shareはパースできません")
-                case ExtensionType.signature_algorithms:
-                    ext = SignatureAlgorithms.parse(extension_data)
-                case ExtensionType.signature_algorithms_cert:
-                    ext = SignatureAlgorithmsCert.parse(extension_data)
-                case _:
-                    raise ValueError(f"未対応のExtensionです。名前：{extension_type.name}")
+            if extension_type in extensions.keys():
+                ext = extensions[extension_type].parse(extension_data, handshake_type)
+            else:
+                raise ValueError(f"未対応のExtensionです。名前：{extension_type.name}")
             print(ext)
-            extensions.append(Extension(extension_type, ext))
-        return extensions
+            result.append(Extension(extension_type, ext))
+        return result
 
-    @staticmethod
-    def unparse(byte_seq: bytes):
-        pass
+    def unparse(self, handshake_type: HandshakeType):
+        res = b""
+        res += self.extension_type.value.to_bytes(length=2)
+        res += self.extension_data.unparse(handshake_type)
+        return res

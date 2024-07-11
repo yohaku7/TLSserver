@@ -1,6 +1,7 @@
 # -*- coding: UTF-8 -*-
 import socket
 
+import extension
 from record import ContentType, TLSPlaintext
 from handshake import Handshake, HandshakeParser
 

@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 
 from .cipher_suite import CipherSuite
-from reader.bytes_reader import BytesReader
+from reader import BytesReader, BytesBuilder
 from extension import Extension
 from common import HandshakeType
 
@@ -38,10 +38,9 @@ class ClientHello:
                            extensions,
                            legacy_compression_methods=legacy_compression_methods), br.rest_bytes()
 
-        # c = ClientHello(legacy_version,
-        #                    random,
-        #                    legacy_session_id,
-        #                    cipher_suites,
-        #                    [],
-        #                    legacy_compression_methods=legacy_compression_methods), br.rest_bytes()
-        # print(c)
+    def unparse(self):
+        bb = BytesBuilder()
+        bb.append_int(self.legacy_version, 2)
+        bb.append_int(self.random, 32)
+        bb.append_variable_length(1, self.legacy_session_id.to_bytes(len(hex(self.legacy_session_id)[2:])))
+        bb.append_variable_length(2, self.cipher_suites)
