@@ -61,6 +61,8 @@ class Extension:
 
     def unparse(self, handshake_type: HandshakeType):
         res = b""
-        res += self.extension_type.value.to_bytes(length=2)
-        res += self.extension_data.unparse(handshake_type)
+        res += self.extension_type.value.to_bytes(2)
+        ext_data_raw = self.extension_data.unparse(handshake_type)
+        res += len(ext_data_raw).to_bytes(2)
+        res += ext_data_raw
         return res

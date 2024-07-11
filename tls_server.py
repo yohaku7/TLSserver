@@ -3,7 +3,9 @@ import socket
 
 import pprint
 from record import ContentType, TLSPlaintext
-from handshake import Handshake, HandshakeParser
+from handshake import Handshake
+from handshake.server_hello import ServerHello
+from common import HandshakeType
 
 
 class TLSServer:
@@ -53,6 +55,15 @@ if __name__ == '__main__':
     pprint.pprint(tp)
     match tp.type:
         case ContentType.handshake:
-            hp = Handshake.parse(tp.fragment)
+            handshake = Handshake.parse(tp.fragment)
             print("----- Handshake -----")
-            pprint.pprint(hp)
+            pprint.pprint(handshake)
+    match handshake.msg_type:
+        case HandshakeType.client_hello:
+            sh = ServerHello.make(handshake.message)
+            print("----- ServerHello -----")
+            pprint.pprint(sh)
+            print("----- ServerHello bin -----")
+            print(sh.unparse())
+
+    pprint.pprint(ServerHello.parse(sh.unparse()))

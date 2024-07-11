@@ -13,6 +13,9 @@ class BytesBuilder:
 
     def append_variable_length(self, header_length: int, b: bytes):
         length = len(b)
+        if length == 0 or b is None:
+            self.__byte += (0).to_bytes(header_length)
+            return
         self.__byte += length.to_bytes(header_length, "big")
         self.__byte += b
 
