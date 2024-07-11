@@ -12,9 +12,11 @@ class SignatureAlgorithms:
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         br = BytesReader(byte_seq)
         ssa = br.read_variable_length_per(2, 2, "int")
-        print(ssa)
-        ssa = list(map(SignatureScheme, ssa))
-        return SignatureAlgorithms(ssa)
+        res = []
+        for elem in ssa:
+            if elem in [v.value for _, v in SignatureScheme.__members__.items()]:
+                res.append(SignatureScheme(elem))
+        return SignatureAlgorithms(res)
 
 
 @dataclass
@@ -25,5 +27,8 @@ class SignatureAlgorithmsCert:
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         br = BytesReader(byte_seq)
         ssa = br.read_variable_length_per(2, 2, "int")
-        ssa = list(map(SignatureScheme, ssa))
-        return SignatureAlgorithms(ssa)
+        res = []
+        for elem in ssa:
+            if elem in [v.value for _, v in SignatureScheme.__members__.items()]:
+                res.append(SignatureScheme(elem))
+        return SignatureAlgorithms(res)

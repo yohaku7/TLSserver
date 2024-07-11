@@ -17,6 +17,7 @@ class ExtensionType(IntEnum):
     padding = 21
     encrypt_then_mac = 22
     extended_master_secret = 23
+    record_size_limit = 28
     session_ticket = 35
     pre_shared_key = 41
     early_data = 42

@@ -10,15 +10,15 @@ from common import HandshakeType
 
 @dataclass
 class ClientHello:
-    legacy_version: int  # uint16
-    random: int  # 32byte integer
+    legacy_version: int
+    random: int
     legacy_session_id: int
     cipher_suites: list[CipherSuite]
     extensions: list[Extension]
     legacy_compression_methods: int = field(default=0)
 
     @staticmethod
-    def parse(byte_seq: bytes) -> ("ClientHello", bytes):
+    def parse(byte_seq: bytes):
         br = BytesReader(byte_seq)
         legacy_version = br.read_byte(2, "int")
         random = br.read_byte(32, "int")
@@ -31,12 +31,13 @@ class ClientHello:
 
         extensions = br.read_variable_length(2, "raw")
         extensions = Extension.parse(extensions, HandshakeType.client_hello)
+        assert len(br.rest_bytes()) == 0
         return ClientHello(legacy_version,
                            random,
                            legacy_session_id,
                            cipher_suites,
                            extensions,
-                           legacy_compression_methods=legacy_compression_methods), br.rest_bytes()
+                           legacy_compression_methods=legacy_compression_methods)
 
     def unparse(self):
         bb = BytesBuilder()

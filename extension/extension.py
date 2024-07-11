@@ -10,7 +10,9 @@ from .session_ticket import SessionTicket
 from .key_share import KeyShare
 from .encrypt_then_mac import EncryptThenMAC
 from .extended_master_secret import ExtendedMasterSecret
+from .psk_key_exchange_modes import PskKeyExchangeModes
 from .signature_algorithms import SignatureAlgorithms, SignatureAlgorithmsCert
+from .record_size_limit import RecordSizeLimit
 
 from reader import BytesReader
 from common import HandshakeType, ExtensionType
@@ -31,6 +33,8 @@ extensions = {
     ExtensionType.signature_algorithms_cert: SignatureAlgorithmsCert,
     ExtensionType.encrypt_then_mac: EncryptThenMAC,
     ExtensionType.extended_master_secret: ExtendedMasterSecret,
+    ExtensionType.psk_key_exchange_modes: PskKeyExchangeModes,
+    ExtensionType.record_size_limit: RecordSizeLimit,
 }
 
 
@@ -52,7 +56,6 @@ class Extension:
                 ext = extensions[extension_type].parse(extension_data, handshake_type)
             else:
                 raise ValueError(f"未対応のExtensionです。名前：{extension_type.name}")
-            print(ext)
             result.append(Extension(extension_type, ext))
         return result
 
