@@ -1,7 +1,7 @@
 # -*- coding: UTF-8 -*-
 from dataclasses import dataclass
 
-from reader.bytes_reader import BytesReader
+from reader import BytesReader, BytesBuilder
 from common import HandshakeType
 from .client_hello import ClientHello
 
@@ -26,3 +26,12 @@ class Handshake:
             case _:
                 raise ValueError("未対応のhandshakeです。")
         return Handshake(msg_type, length, msg)
+
+    @staticmethod
+    def make(msg_type: HandshakeType, handshake: object):
+        bb = BytesBuilder()
+        bb.append_int(msg_type.value, 1)
+        msg_raw = handshake.unparse()
+        msg_raw_len = len(msg_raw).to_bytes(3)
+        bb.append(msg_raw_len + msg_raw)
+        return bb.to_bytes()
