@@ -11,6 +11,6 @@ class SessionTicket:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         if byte_seq is None:
-            return SessionTicket(None)
+            return SessionTicket(b"")
         br = BytesReader(byte_seq)
-        return SessionTicket(br.read_variable_length(2, "raw"))
+        return SessionTicket(br.r(0x20, 2))

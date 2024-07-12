@@ -11,7 +11,7 @@ class SupportedGroups:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         br = BytesReader(byte_seq)
-        named_group_list = br.read_variable_length_per(2, 2, "int")
+        named_group_list = br.i(0x21, 2, per=2)
         named_group_list = list(map(NamedGroup, named_group_list))
         return SupportedGroups(named_group_list)
 

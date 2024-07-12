@@ -14,9 +14,9 @@ class SupportedVersions:
         version: list[int]
         match handshake_type:
             case HandshakeType.client_hello:
-                version = br.read_variable_length_per(1, 2, "int")
+                version = br.i(0x21, 1, per=2)
             case HandshakeType.server_hello:  # and HelloRetryRequest
-                version = [br.read_byte(2, "int")]
+                version = [br.i(0, 2)]
             case _:
                 raise ValueError("supported_versionsはこのハンドシェイクタイプには送信しないでください")
         return SupportedVersions(version)

@@ -15,8 +15,8 @@ class ServerName:
         br = BytesReader(byte_seq)
         # 拡張子フィールド（byte_seq引数）には、RFC6066のServerNameListが入っていて、2byteヘッダの可変長
         # ベクトルとして表現されるので、最初にその2バイトを消費する。
-        _ = br.read_byte(2, "int")
-        name_type = br.read_byte(1, "int")
+        _ = br.i(0, 2)
+        name_type = br.i(0, 1)
         assert name_type == 0
         name = br.read_variable_length(2, "raw").decode()
 

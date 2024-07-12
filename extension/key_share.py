@@ -18,12 +18,12 @@ class KeyShareClientHello:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         br = BytesReader(byte_seq)
-        client_shares_raw = br.read_variable_length(2, "raw")
+        client_shares_raw = br.r(0x20, 2)
         br = BytesReader(client_shares_raw)
         res = []
         while br.rest_length != 0:
-            group = br.read_byte(2, "int")
-            key_exchange = br.read_variable_length(2, "raw")
+            group = br.i(0, 2)
+            key_exchange = br.r(0x20, 2)
             res.append(KeyShareEntry(NamedGroup(group), key_exchange))
         return KeyShareClientHello(res)
 

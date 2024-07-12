@@ -47,10 +47,8 @@ class Extension:
     def parse(byte_seq: bytes, handshake_type: HandshakeType | None = None) -> list["Extension"]:
         result = []
         br = BytesReader(byte_seq)
-
         while br.rest_length != 0:
-            extension_type = ExtensionType(br.read_byte(2, "int"))
-            extension_data: bytes = br.read_variable_length(2, "raw")
+            extension_type, extension_data = br.parse((0, 2, "int"), (0x20, 2, "raw"))
             ext: object
             if extension_type in extensions.keys():
                 ext = extensions[extension_type].parse(extension_data, handshake_type)

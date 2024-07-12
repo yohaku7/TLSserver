@@ -11,6 +11,6 @@ class RenegotiationInfo:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         br = BytesReader(byte_seq)
-        rec = br.read_variable_length(1, "raw")
+        rec = br.r(0x20, 1)
         assert br.rest_length == 0
         return RenegotiationInfo(rec)

@@ -9,7 +9,7 @@ class RecordSizeLimit:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type):
         br = BytesReader(byte_seq)
-        return RecordSizeLimit(br.read_byte(2, "int"))
+        return RecordSizeLimit(br.i(0, 2))
 
     def unparse(self, handshake_type):
         return self.limit.to_bytes(2)

@@ -26,7 +26,7 @@ class SignatureAlgorithmsCert:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         br = BytesReader(byte_seq)
-        ssa = br.read_variable_length_per(2, 2, "int")
+        ssa = br.i(0x21, 2, per=2)
         res = []
         for elem in ssa:
             if elem in [v.value for _, v in SignatureScheme.__members__.items()]:

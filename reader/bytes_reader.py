@@ -22,6 +22,41 @@ class BytesReader:
     def rest_length(self):
         return len(self.rest_bytes())
 
+    def read(self, order):
+        match order[0]:
+            case 0x00:
+                return self.read_byte(order[1], order[2])
+            case 0x01:
+                return self.read_bit(order[1], order[2])
+            case 0x10:
+                return self.read_bytes(order[1], order[2], order[3])
+            case 0x11:
+                return self.read_bits(order[1], order[2], order[3])
+            case 0x20:
+                return self.read_variable_length(order[1], order[2])
+            case 0x21:
+                return self.read_variable_length_per(order[1], order[2], order[3])
+            case _:
+                raise ValueError("illegal instruction")
+
+    def parse(self, *args: tuple):
+        res = []
+        for o in args:
+            res.append(self.read(o))
+        return res
+
+    def i(self, read_type: int, n: int, *, per: int | None = None):
+        if per is None:
+            return self.read((read_type, n, "int"))
+        else:
+            return self.read((read_type, n, per, "int"))
+
+    def r(self, read_type: int, n: int, *, per: int | None = None):
+        if per is None:
+            return self.read((read_type, n, "raw"))
+        else:
+            return self.read((read_type, n, per, "raw"))
+
     def __next_bits(self, n: int) -> str:
         res = self.__bin_seq[self.__bin_next_pos:self.__bin_next_pos + n]
         self.__bin_next_pos += n
