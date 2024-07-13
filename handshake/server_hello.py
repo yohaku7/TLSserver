@@ -9,6 +9,8 @@ from extension.supported_versions import SupportedVersions
 from common import ExtensionType, HandshakeType
 from reader import BytesBuilder, BytesReader
 
+__all__ = ["ServerHello"]
+
 
 @dataclass
 class ServerHello:
@@ -34,12 +36,17 @@ class ServerHello:
     @staticmethod
     def parse(byte_seq: bytes):
         br = BytesReader(byte_seq)
-        legacy_version = br.read_byte(2, "int")
-        random = br.read_byte(32, "int")
-        legacy_session_id_echo = br.read_variable_length(1, "raw")
-        cipher_suite = CipherSuite(br.read_byte(2, "int"))
-        legacy_compression_method = br.read_byte(1, "int")
-        extensions = Extension.parse(br.read_variable_length(2, "raw"), HandshakeType.server_hello)
+        (legacy_version, random,
+         legacy_session_id_echo, cipher_suite,
+         legacy_compression_method, ext) = br.parse(
+            BytesReader.Order(0, 2, "int"),
+            BytesReader.Order(0, 32, "int"),
+            BytesReader.Order(0x20, 1, "raw"),
+            BytesReader.Order(0, 2, "int"),
+            BytesReader.Order(0, 1, "int"),
+            BytesReader.Order(0x20, 2, "raw"),
+        )
+        extensions = Extension.parse(ext, HandshakeType.server_hello)
         return ServerHello(
             legacy_version=legacy_version,
             random=random,

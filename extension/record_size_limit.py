@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from reader import BytesReader
+from reader import Block
 
 
 @dataclass
@@ -8,8 +8,7 @@ class RecordSizeLimit:
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type):
-        br = BytesReader(byte_seq)
-        return RecordSizeLimit(br.i(0, 2))
+        return Block(2, "byte", "int", after_parse=RecordSizeLimit).from_byte(byte_seq)
 
     def unparse(self, handshake_type):
         return self.limit.to_bytes(2)

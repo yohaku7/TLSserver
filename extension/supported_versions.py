@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from reader import BytesReader, BytesBuilder
+from reader import BytesBuilder, Block, ListBlock
 from common import HandshakeType
 
 
@@ -10,13 +10,12 @@ class SupportedVersions:
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        br = BytesReader(byte_seq)
         version: list[int]
         match handshake_type:
             case HandshakeType.client_hello:
-                version = br.i(0x21, 1, per=2)
+                version = ListBlock(1, 2, "byte", "int", True).from_byte(byte_seq)
             case HandshakeType.server_hello:  # and HelloRetryRequest
-                version = [br.i(0, 2)]
+                version = [Block(2, "byte", "int").from_byte(byte_seq)]
             case _:
                 raise ValueError("supported_versionsはこのハンドシェイクタイプには送信しないでください")
         return SupportedVersions(version)

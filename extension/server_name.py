@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-from reader import BytesReader
+from reader import Blocks, Block
 from dataclasses import dataclass, field
 from common import HandshakeType
 
@@ -12,15 +12,14 @@ class ServerName:
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        br = BytesReader(byte_seq)
         # 拡張子フィールド（byte_seq引数）には、RFC6066のServerNameListが入っていて、2byteヘッダの可変長
         # ベクトルとして表現されるので、最初にその2バイトを消費する。
-        _ = br.i(0, 2)
-        name_type = br.i(0, 1)
-        assert name_type == 0
-        name = br.read_variable_length(2, "raw").decode()
-
-        return ServerName(name, name_type=name_type)
+        server_name = Blocks([
+            Block(2, "byte", "int"),
+            Block(1, "byte", "int"),
+            Block(2, "byte", "raw", True, after_parse=lambda n: n.decode())
+        ], after_parse=lambda _, name_type, name: ServerName(name, name_type)).from_byte(byte_seq)
+        return server_name
 
     def unparse(self, handshake_type: HandshakeType):
         res = b""

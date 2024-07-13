@@ -6,7 +6,7 @@ from common import HandshakeType
 class EncryptThenMAC:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        assert byte_seq is None
+        assert byte_seq == b""
         return EncryptThenMAC()
 
     def unparse(self, handshake_type: HandshakeType):

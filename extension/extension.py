@@ -14,7 +14,7 @@ from .psk_key_exchange_modes import PskKeyExchangeModes
 from .signature_algorithms import SignatureAlgorithms, SignatureAlgorithmsCert
 from .record_size_limit import RecordSizeLimit
 
-from reader import BytesReader
+from reader import BytesReader, Block
 from common import HandshakeType, ExtensionType
 
 __all__ = [
@@ -37,6 +37,10 @@ extensions = {
     ExtensionType.record_size_limit: RecordSizeLimit,
 }
 
+blocks = [
+    Block(2, "byte", "int", after_parse=ExtensionType),
+    Block(2, "byte", "raw", True)
+]
 
 @dataclass
 class Extension:
@@ -44,11 +48,11 @@ class Extension:
     extension_data: object
 
     @staticmethod
-    def parse(byte_seq: bytes, handshake_type: HandshakeType | None = None) -> list["Extension"]:
+    def parse(byte_seq: bytes, handshake_type: HandshakeType) -> list["Extension"]:
         result = []
         br = BytesReader(byte_seq)
         while br.rest_length != 0:
-            extension_type, extension_data = br.parse((0, 2, "int"), (0x20, 2, "raw"))
+            extension_type, extension_data = br.parse_blocks(blocks)
             ext: object
             if extension_type in extensions.keys():
                 ext = extensions[extension_type].parse(extension_data, handshake_type)

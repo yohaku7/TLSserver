@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from reader import BytesReader
+from reader import Blocks, ListBlock
 from common import NamedGroup, HandshakeType
 
 
@@ -10,10 +10,10 @@ class SupportedGroups:
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        br = BytesReader(byte_seq)
-        named_group_list = br.i(0x21, 2, per=2)
-        named_group_list = list(map(NamedGroup, named_group_list))
-        return SupportedGroups(named_group_list)
+        supported_groups = Blocks([
+            ListBlock(2, 2, "byte", "int", True, each_after_parse=NamedGroup)
+        ], after_parse=SupportedGroups).from_byte(byte_seq)
+        return supported_groups
 
     def unparse(self, handshake_type: HandshakeType):
         named_group_raw = b""

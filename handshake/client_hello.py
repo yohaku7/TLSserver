@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 
 from .cipher_suite import CipherSuite
-from reader import BytesReader, BytesBuilder
+from reader import BytesBuilder, Block, ListBlock, Blocks
 from extension import Extension
 from common import HandshakeType
 
@@ -19,25 +19,19 @@ class ClientHello:
 
     @staticmethod
     def parse(byte_seq: bytes):
-        br = BytesReader(byte_seq)
-        legacy_version = br.read_byte(2, "int")
-        random = br.read_byte(32, "int")
-        legacy_session_id = br.read_variable_length(1, "raw")
-
-        cipher_suites = br.read_variable_length_per(2, 2, "int")
-        cipher_suites = list(map(CipherSuite, cipher_suites))
-
-        legacy_compression_methods = br.read_variable_length(1, "int")
-
-        extensions = br.read_variable_length(2, "raw")
-        extensions = Extension.parse(extensions, HandshakeType.client_hello)
-        assert len(br.rest_bytes()) == 0
-        return ClientHello(random,
-                           legacy_session_id,
-                           cipher_suites,
-                           extensions,
-                           legacy_version=legacy_version,
-                           legacy_compression_methods=legacy_compression_methods)
+        client_hello = Blocks([
+            Block(2, "byte", "int"),
+            Block(32, "byte", "int"),
+            Block(1, "byte", "raw", True),
+            ListBlock(2, 2, "byte", "int", variable=True, each_after_parse=CipherSuite),
+            Block(1, "byte", "int", True),
+            Block(2, "byte", "raw", True, after_parse=lambda raw: Extension.parse(raw, HandshakeType.client_hello)),
+        ], after_parse=lambda lv, r, lsi, cs, lcm, ext: ClientHello(
+            legacy_version=lv, random=r,
+            legacy_session_id=lsi, cipher_suites=cs,
+            legacy_compression_methods=lcm, extensions=ext
+        )).from_byte(byte_seq)
+        return client_hello
 
     def unparse(self):
         bb = BytesBuilder()

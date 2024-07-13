@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class ExtendedMasterSecret:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type):
-        assert byte_seq is None
+        assert byte_seq == b""
         return ExtendedMasterSecret()
 
     def unparse(self, handshake_type):

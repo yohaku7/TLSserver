@@ -1,8 +1,11 @@
 from dataclasses import dataclass
 
-
 from common import NamedGroup, HandshakeType
-from reader import BytesReader
+from reader import BytesReader, Block, ListBlock, Blocks
+
+__all__ = [
+    "KeyShare", "KeyShareServerHello", "KeyShareHelloRetryRequest", "KeyShareClientHello"
+]
 
 
 @dataclass
@@ -18,13 +21,15 @@ class KeyShareClientHello:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         br = BytesReader(byte_seq)
-        client_shares_raw = br.r(0x20, 2)
+        client_shares_raw = Block(2, "byte", "raw", True).parse(br)
         br = BytesReader(client_shares_raw)
         res = []
         while br.rest_length != 0:
-            group = br.i(0, 2)
-            key_exchange = br.r(0x20, 2)
-            res.append(KeyShareEntry(NamedGroup(group), key_exchange))
+            key_share_entry = Blocks([
+                Block(2, "byte", "int", after_parse=NamedGroup),
+                Block(2, "byte", "raw", True)
+            ], after_parse=KeyShareEntry).parse(br)
+            res.append(key_share_entry)
         return KeyShareClientHello(res)
 
 

@@ -1,10 +1,8 @@
 # -*- coding: UTF-8 -*-
 import socket
-
 import pprint
+
 from record import ContentType, TLSPlaintext
-from handshake import Handshake
-from alert import Alert
 from handshake.server_hello import ServerHello
 from common import HandshakeType
 
@@ -36,24 +34,24 @@ class TLSServer:
         data = self.__conn.recv(65565)
         return data
 
-    @staticmethod
-    def parse(byte_seq: bytes) -> (TLSPlaintext, Handshake):
-        tp: TLSPlaintext
-        tp, rest = TLSPlaintext.parse(byte_seq)
-        print("--- TLSPlaintext ---")
-        print(f"type: {tp.type.name} ({tp.type.value})")
-        print(f"legacy_record_version: {tp.legacy_record_version}")
-        print(f"length: {tp.length} [{"Verified" if tp.length == len(rest) else "Invalid"}]")
-        print()
-        match tp.type:
-            case ContentType.handshake:
-                handshake, rest = Handshake.parse(rest)
-            case _:
-                raise ValueError("ハンドシェイク以外にはまだ対応してないよ！")
-        print(f"--- Handshake ---")
-        print(f"length: {handshake.length}")
-        print(f"content: {handshake.message}")
-        return tp, handshake
+    # @staticmethod
+    # def parse(byte_seq: bytes) -> (TLSPlaintext, Handshake):
+    #     tp: TLSPlaintext
+    #     tp, rest = TLSPlaintext.parse(byte_seq)
+    #     print("--- TLSPlaintext ---")
+    #     print(f"type: {tp.type.name} ({tp.type.value})")
+    #     print(f"legacy_record_version: {tp.legacy_record_version}")
+    #     print(f"length: {tp.length} [{"Verified" if tp.length == len(rest) else "Invalid"}]")
+    #     print()
+    #     match tp.type:
+    #         case ContentType.handshake:
+    #             handshake, rest = Handshake.parse(rest)
+    #         case _:
+    #             raise ValueError("ハンドシェイク以外にはまだ対応してないよ！")
+    #     print(f"--- Handshake ---")
+    #     print(f"length: {handshake.length}")
+    #     print(f"content: {handshake.message}")
+    #     return tp, handshake
 
 
 if __name__ == '__main__':
@@ -77,32 +75,6 @@ if __name__ == '__main__':
                 print("----- Alert -----")
                 pprint.pprint(tp.fragment)
                 break
-        # match tp.type:
-        #     case ContentType.handshake:
-        #         handshake = Handshake.parse(tp.fragment)
-        #         print("----- Handshake -----")
-        #         pprint.pprint(handshake)
-        #         match handshake.msg_type:
-        #             case HandshakeType.client_hello:
-        #                 sh = ServerHello.make(handshake.message)
-        #                 pprint.pprint(sh)
-        #                 hs = Handshake.make(HandshakeType.server_hello, sh)
-        #                 record = TLSPlaintext(
-        #                     type=ContentType.handshake,
-        #                     legacy_record_version=0x0303,
-        #                     length=len(hs),
-        #                     fragment=hs,
-        #                 )
-        #                 print("----- Send Message -----")
-        #                 pprint.pprint(record)
-        #                 server.send(record.unparse())
-        #     case ContentType.alert:
-        #         alert = Alert.parse(tp.fragment)
-        #         print("----- Alert -----")
-        #         pprint.pprint(alert)
-        #         break
-        #     case _:
-        #         raise ValueError("対応してないContentTypeだよ！")
         print()
         print("------------------- Next --------------------")
         print()

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from reader import BytesReader
+from reader import Block
 from common import HandshakeType
 
 
@@ -10,7 +10,6 @@ class SessionTicket:
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        if byte_seq is None:
+        if byte_seq == b"":
             return SessionTicket(b"")
-        br = BytesReader(byte_seq)
-        return SessionTicket(br.r(0x20, 2))
+        return Block(2, "byte", "raw", True, after_parse=SessionTicket).from_byte(byte_seq)

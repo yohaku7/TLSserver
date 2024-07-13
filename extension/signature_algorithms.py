@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from common import SignatureScheme, HandshakeType
-from reader import BytesReader
+from reader import ListBlock
 
 
 @dataclass
@@ -10,8 +10,7 @@ class SignatureAlgorithms:
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        br = BytesReader(byte_seq)
-        ssa = br.read_variable_length_per(2, 2, "int")
+        ssa = ListBlock(2, 2, "byte", "int", True).from_byte(byte_seq)
         res = []
         for elem in ssa:
             if elem in [v.value for _, v in SignatureScheme.__members__.items()]:
@@ -25,8 +24,7 @@ class SignatureAlgorithmsCert:
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        br = BytesReader(byte_seq)
-        ssa = br.i(0x21, 2, per=2)
+        ssa = ListBlock(2, 2, "byte", "int", True).from_byte(byte_seq)
         res = []
         for elem in ssa:
             if elem in [v.value for _, v in SignatureScheme.__members__.items()]:

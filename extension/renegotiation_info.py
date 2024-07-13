@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from reader import BytesReader, BytesBuilder
+from reader import BytesBuilder, Block
 from common import HandshakeType
 
 
@@ -10,7 +10,4 @@ class RenegotiationInfo:
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        br = BytesReader(byte_seq)
-        rec = br.r(0x20, 1)
-        assert br.rest_length == 0
-        return RenegotiationInfo(rec)
+        return Block(1, "byte", "raw", True, after_parse=RenegotiationInfo).from_byte(byte_seq)

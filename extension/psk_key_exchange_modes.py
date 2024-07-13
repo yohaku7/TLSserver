@@ -1,6 +1,6 @@
 from enum import IntEnum
 from dataclasses import dataclass
-from reader import BytesReader, BytesBuilder
+from reader import BytesBuilder, Block
 
 
 class PskKeyExchangeMode(IntEnum):
@@ -15,11 +15,8 @@ class PskKeyExchangeModes:
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type):
-        br = BytesReader(byte_seq)
-        # ke_modes = br.read_variable_length(1, "int")
-        # ke_modes = PskKeyExchangeMode(ke_modes)
-        # return PskKeyExchangeModes(PskKeyExchangeMode(br.read((0x20, 1, "int"))))
-        return PskKeyExchangeModes(PskKeyExchangeMode(br.i(0x20, 1)))
+        return Block(1, "byte", "int", True,
+                     after_parse=lambda ke_modes: PskKeyExchangeModes(PskKeyExchangeMode(ke_modes))).from_byte(byte_seq)
 
     def unparse(self, handshake_type):
         bb = BytesBuilder()
