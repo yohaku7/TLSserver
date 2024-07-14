@@ -2,7 +2,7 @@ from .content_type import ContentType
 from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(frozen=True)
 class TLSCiphertext:
     length: int
     encrypted_record: bytes

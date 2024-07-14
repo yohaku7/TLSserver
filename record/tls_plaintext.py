@@ -6,7 +6,7 @@ from handshake import Handshake
 from alert import Alert
 
 
-@dataclass
+@dataclass(frozen=True)
 class TLSPlaintext:
     type: ContentType
     legacy_record_version: int

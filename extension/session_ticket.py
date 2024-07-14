@@ -4,7 +4,7 @@ from reader import Block
 from common import HandshakeType
 
 
-@dataclass
+@dataclass(frozen=True)
 class SessionTicket:
     ticket: bytes | None
 
@@ -12,4 +12,4 @@ class SessionTicket:
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         if byte_seq == b"":
             return SessionTicket(b"")
-        return Block(2, "byte", "raw", True, after_parse=SessionTicket).from_byte(byte_seq)
+        return Block(2, "byte", "raw", variable=True, after_parse=SessionTicket).from_byte(byte_seq)

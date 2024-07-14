@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExtendedMasterSecret:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type):

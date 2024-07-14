@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from common import HandshakeType
 
 
-@dataclass
+@dataclass(frozen=True)
 class EncryptThenMAC:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):

@@ -8,7 +8,7 @@ from extension import Extension
 from common import HandshakeType
 
 
-@dataclass
+@dataclass(frozen=True)
 class ClientHello:
     random: int
     legacy_session_id: bytes
@@ -22,10 +22,10 @@ class ClientHello:
         client_hello = Blocks([
             Block(2, "byte", "int"),
             Block(32, "byte", "int"),
-            Block(1, "byte", "raw", True),
+            Block(1, "byte", "raw", variable=True),
             ListBlock(2, 2, "byte", "int", variable=True, each_after_parse=CipherSuite),
-            Block(1, "byte", "int", True),
-            Block(2, "byte", "raw", True, after_parse=lambda raw: Extension.parse(raw, HandshakeType.client_hello)),
+            Block(1, "byte", "int", variable=True),
+            Block(2, "byte", "raw", variable=True, after_parse=lambda raw: Extension.parse(raw, HandshakeType.client_hello)),
         ], after_parse=lambda lv, r, lsi, cs, lcm, ext: ClientHello(
             legacy_version=lv, random=r,
             legacy_session_id=lsi, cipher_suites=cs,

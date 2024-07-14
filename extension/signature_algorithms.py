@@ -4,13 +4,13 @@ from common import SignatureScheme, HandshakeType
 from reader import ListBlock
 
 
-@dataclass
+@dataclass(frozen=True)
 class SignatureAlgorithms:
     supported_signature_algorithms: list[SignatureScheme]
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        ssa = ListBlock(2, 2, "byte", "int", True).from_byte(byte_seq)
+        ssa = ListBlock(2, 2, "byte", "int", variable=True).from_byte(byte_seq)
         res = []
         for elem in ssa:
             if elem in [v.value for _, v in SignatureScheme.__members__.items()]:
@@ -18,13 +18,13 @@ class SignatureAlgorithms:
         return SignatureAlgorithms(res)
 
 
-@dataclass
+@dataclass(frozen=True)
 class SignatureAlgorithmsCert:
     supported_signature_algorithms: list[SignatureScheme]
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        ssa = ListBlock(2, 2, "byte", "int", True).from_byte(byte_seq)
+        ssa = ListBlock(2, 2, "byte", "int", variable=True).from_byte(byte_seq)
         res = []
         for elem in ssa:
             if elem in [v.value for _, v in SignatureScheme.__members__.items()]:

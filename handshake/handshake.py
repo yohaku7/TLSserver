@@ -1,16 +1,21 @@
 # -*- coding: UTF-8 -*-
 from dataclasses import dataclass
+from typing import ClassVar
 
-from reader import BytesReader, BytesBuilder
+from reader import BytesReader, BytesBuilder, Blocks, Block
 from common import HandshakeType
 from .client_hello import ClientHello
 
 
-@dataclass
+@dataclass(frozen=True)
 class Handshake:
     msg_type: HandshakeType
     length: int  # uint24
     message: object
+    blocks: ClassVar[Blocks] = Blocks([
+        Block(1, "byte", "int", after_parse=HandshakeType),
+        Block(3, "byte", "int"),
+    ])
 
     @staticmethod
     def parse(byte_seq: bytes):

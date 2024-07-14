@@ -5,7 +5,7 @@ from common import HandshakeType
 
 
 # TODO; 複数のホスト名にも対応する。
-@dataclass
+@dataclass(frozen=True)
 class ServerName:
     name: str
     name_type: int = field(default=0)
@@ -17,7 +17,7 @@ class ServerName:
         server_name = Blocks([
             Block(2, "byte", "int"),
             Block(1, "byte", "int"),
-            Block(2, "byte", "raw", True, after_parse=lambda n: n.decode())
+            Block(2, "byte", "raw", variable=True, after_parse=lambda n: n.decode())
         ], after_parse=lambda _, name_type, name: ServerName(name, name_type)).from_byte(byte_seq)
         return server_name
 

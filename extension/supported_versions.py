@@ -4,7 +4,7 @@ from reader import BytesBuilder, Block, ListBlock
 from common import HandshakeType
 
 
-@dataclass
+@dataclass(frozen=True)
 class SupportedVersions:
     version: list[int]
 
@@ -13,7 +13,7 @@ class SupportedVersions:
         version: list[int]
         match handshake_type:
             case HandshakeType.client_hello:
-                version = ListBlock(1, 2, "byte", "int", True).from_byte(byte_seq)
+                version = ListBlock(1, 2, "byte", "int", variable=True).from_byte(byte_seq)
             case HandshakeType.server_hello:  # and HelloRetryRequest
                 version = [Block(2, "byte", "int").from_byte(byte_seq)]
             case _:

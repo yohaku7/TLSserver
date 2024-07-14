@@ -9,13 +9,13 @@ class PskKeyExchangeMode(IntEnum):
     # 255
 
 
-@dataclass
+@dataclass(frozen=True)
 class PskKeyExchangeModes:
     ke_modes: PskKeyExchangeMode
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type):
-        return Block(1, "byte", "int", True,
+        return Block(1, "byte", "int", variable=True,
                      after_parse=lambda ke_modes: PskKeyExchangeModes(PskKeyExchangeMode(ke_modes))).from_byte(byte_seq)
 
     def unparse(self, handshake_type):

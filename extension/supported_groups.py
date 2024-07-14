@@ -4,14 +4,14 @@ from reader import Blocks, ListBlock
 from common import NamedGroup, HandshakeType
 
 
-@dataclass
+@dataclass(frozen=True)
 class SupportedGroups:
     named_group_list: list[NamedGroup]
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         supported_groups = Blocks([
-            ListBlock(2, 2, "byte", "int", True, each_after_parse=NamedGroup)
+            ListBlock(2, 2, "byte", "int", variable=True, each_after_parse=NamedGroup)
         ], after_parse=SupportedGroups).from_byte(byte_seq)
         return supported_groups
 

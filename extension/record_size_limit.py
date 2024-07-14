@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from reader import Block
 
 
-@dataclass
+@dataclass(frozen=True)
 class RecordSizeLimit:
     limit: int
 

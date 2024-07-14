@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import ClassVar
 from Crypto.Util.number import getRandomNBitInteger
 
 from .cipher_suite import CipherSuite
@@ -7,12 +8,12 @@ from .client_hello import ClientHello
 from extension.extension import Extension
 from extension.supported_versions import SupportedVersions
 from common import ExtensionType, HandshakeType
-from reader import BytesBuilder, BytesReader
+from reader import BytesBuilder, Blocks, Block
 
 __all__ = ["ServerHello"]
 
 
-@dataclass
+@dataclass(frozen=True)
 class ServerHello:
     random: int
     legacy_session_id_echo: bytes
@@ -20,6 +21,19 @@ class ServerHello:
     extensions: list[Extension]
     legacy_version: int = field(default=0x0303)
     legacy_compression_method: int = field(default=0)
+    blocks: ClassVar[Blocks] = Blocks([
+        Block(2, "byte", "int"),
+        Block(32, "byte", "int"),
+        Block(1, "byte", "raw", variable=True),
+        Block(2, "byte", "int"),
+        Block(1, "byte", "int"),
+        Block(2, "byte", "raw", variable=True,
+              after_parse=lambda ext: Extension.parse(ext, HandshakeType.server_hello))
+    ], after_parse=lambda lv, r, lsie, cs, lcm, ext: ServerHello(
+        legacy_version=lv, random=r,
+        legacy_session_id_echo=lsie, cipher_suite=cs,
+        legacy_compression_method=lcm, extensions=ext
+    ))
 
     @staticmethod
     def make(ch: ClientHello):
@@ -35,26 +49,7 @@ class ServerHello:
 
     @staticmethod
     def parse(byte_seq: bytes):
-        br = BytesReader(byte_seq)
-        (legacy_version, random,
-         legacy_session_id_echo, cipher_suite,
-         legacy_compression_method, ext) = br.parse(
-            BytesReader.Order(0, 2, "int"),
-            BytesReader.Order(0, 32, "int"),
-            BytesReader.Order(0x20, 1, "raw"),
-            BytesReader.Order(0, 2, "int"),
-            BytesReader.Order(0, 1, "int"),
-            BytesReader.Order(0x20, 2, "raw"),
-        )
-        extensions = Extension.parse(ext, HandshakeType.server_hello)
-        return ServerHello(
-            legacy_version=legacy_version,
-            random=random,
-            legacy_session_id_echo=legacy_session_id_echo,
-            cipher_suite=cipher_suite,
-            legacy_compression_method=legacy_compression_method,
-            extensions=extensions
-        )
+        return ServerHello.blocks.from_byte(byte_seq)
 
     def unparse(self):
         bb = BytesBuilder()

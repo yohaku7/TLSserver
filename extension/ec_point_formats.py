@@ -6,10 +6,10 @@ from common import HandshakeType
 __all__ = ["ECPointFormats"]
 
 
-@dataclass
+@dataclass(frozen=True)
 class ECPointFormats:
     ec_point_format: int = field(default=0)
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        return Block(1, "byte", "int", True, after_parse=ECPointFormats).from_byte(byte_seq)
+        return Block(1, "byte", "int", variable=True, after_parse=ECPointFormats).from_byte(byte_seq)

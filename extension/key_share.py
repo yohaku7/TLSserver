@@ -1,49 +1,53 @@
 from dataclasses import dataclass
+from typing import ClassVar
 
 from common import NamedGroup, HandshakeType
-from reader import BytesReader, Block, ListBlock, Blocks
+from reader import BytesReader, Block, Blocks
 
 __all__ = [
     "KeyShare", "KeyShareServerHello", "KeyShareHelloRetryRequest", "KeyShareClientHello"
 ]
 
 
-@dataclass
+@dataclass(frozen=True)
 class KeyShareEntry:
     group: NamedGroup
     key_exchange: bytes
 
 
-@dataclass
+@dataclass(frozen=True)
 class KeyShareClientHello:
     client_shares: list[KeyShareEntry]
+    blocks: ClassVar[Blocks] = Blocks([
+        Block(2, "byte", "int", after_parse=NamedGroup),
+        Block(2, "byte", "raw", variable=True)
+    ], after_parse=KeyShareEntry)
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         br = BytesReader(byte_seq)
-        client_shares_raw = Block(2, "byte", "raw", True).parse(br)
+        client_shares_raw = Block(2, "byte", "raw", variable=True).parse(br)
         br = BytesReader(client_shares_raw)
         res = []
         while br.rest_length != 0:
-            key_share_entry = Blocks([
-                Block(2, "byte", "int", after_parse=NamedGroup),
-                Block(2, "byte", "raw", True)
-            ], after_parse=KeyShareEntry).parse(br)
+            key_share_entry = KeyShareClientHello.blocks.parse(br)
             res.append(key_share_entry)
         return KeyShareClientHello(res)
 
 
-@dataclass
+@dataclass(frozen=True)
 class KeyShareHelloRetryRequest:
     selected_group: NamedGroup
+    blocks: ClassVar[Blocks] = Blocks([
+        Block(2, "byte", "int", after_parse=NamedGroup)
+    ], after_parse=lambda g: KeyShareHelloRetryRequest(g))
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        br = BytesReader(byte_seq)
-        return KeyShareHelloRetryRequest(NamedGroup(br.read_byte(2, "int")))
+        return KeyShareHelloRetryRequest.blocks.from_byte(byte_seq)
 
 
-@dataclass
+@dataclass(frozen=True)
 class KeyShareServerHello:
     server_share: KeyShareEntry
 
