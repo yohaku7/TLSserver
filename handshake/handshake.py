@@ -2,41 +2,39 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from reader import BytesReader, BytesBuilder, Blocks, Block
+from reader import Blocks, Block, RestBlock
 from common import HandshakeType
 from .client_hello import ClientHello
+from .server_hello import ServerHello
+
+__all__ = ["Handshake"]
+
+
+def _make(msg_type, length, message_raw):
+    match msg_type:
+        case HandshakeType.client_hello:
+            message = ClientHello.parse(message_raw)
+        case HandshakeType.server_hello:
+            message = ServerHello.parse(message_raw)
+        case _:
+            raise ValueError("Unsupported handshake")
+    return Handshake(msg_type, length, message)
 
 
 @dataclass(frozen=True)
 class Handshake:
     msg_type: HandshakeType
-    length: int  # uint24
+    length: int
     message: object
-    blocks: ClassVar[Blocks] = Blocks([
+    __blocks: ClassVar[Blocks] = Blocks([
         Block(1, "byte", "int", after_parse=HandshakeType),
         Block(3, "byte", "int"),
-    ])
+        RestBlock("raw")
+    ], after_parse=_make)
 
     @staticmethod
     def parse(byte_seq: bytes):
-        br = BytesReader(byte_seq)
-        msg_type = br.read_byte(1, "int")
-        msg_type = HandshakeType(msg_type)
-        length = br.read_byte(3, "int")
+        return Handshake.__blocks.from_bytes(byte_seq)
 
-        msg: object
-        match msg_type:
-            case HandshakeType.client_hello:
-                msg = ClientHello.parse(br.rest_bytes())
-            case _:
-                raise ValueError("未対応のhandshakeです。")
-        return Handshake(msg_type, length, msg)
-
-    @staticmethod
-    def make(msg_type: HandshakeType, handshake: object):
-        bb = BytesBuilder()
-        bb.append_int(msg_type.value, 1)
-        msg_raw = handshake.unparse()
-        msg_raw_len = len(msg_raw).to_bytes(3)
-        bb.append(msg_raw_len + msg_raw)
-        return bb.to_bytes()
+    def unparse(self):
+        return Handshake.__blocks.unparse(self.msg_type, self.length, self.message.unparse())

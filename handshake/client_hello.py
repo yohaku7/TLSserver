@@ -1,41 +1,46 @@
 # -*- coding: UTF-8 -*-
 # RFC8446 §4.1.2 に基づいたClientHelloとエンコードされた実際のメッセージ（バイト列）。
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from .cipher_suite import CipherSuite
-from reader import BytesBuilder, Block, ListBlock, Blocks
-from extension import Extension
 from common import HandshakeType
+from extension import ExtensionParser
+from extension.extension_data import ExtensionData
+from reader import Block, ListBlock, Blocks
+from .cipher_suite import CipherSuite
+
+__all__ = ["ClientHello"]
 
 
 @dataclass(frozen=True)
 class ClientHello:
+    legacy_version: int
     random: int
     legacy_session_id: bytes
     cipher_suites: list[CipherSuite]
-    extensions: list[Extension]
-    legacy_version: int = field(default=0x0303)
-    legacy_compression_methods: int = field(default=0)
+    legacy_compression_methods: int
+    extensions: list[ExtensionData]
 
     @staticmethod
     def parse(byte_seq: bytes):
-        client_hello = Blocks([
-            Block(2, "byte", "int"),
-            Block(32, "byte", "int"),
-            Block(1, "byte", "raw", variable=True),
-            ListBlock(2, 2, "byte", "int", variable=True, each_after_parse=CipherSuite),
-            Block(1, "byte", "int", variable=True),
-            Block(2, "byte", "raw", variable=True, after_parse=lambda raw: Extension.parse(raw, HandshakeType.client_hello)),
-        ], after_parse=lambda lv, r, lsi, cs, lcm, ext: ClientHello(
-            legacy_version=lv, random=r,
-            legacy_session_id=lsi, cipher_suites=cs,
-            legacy_compression_methods=lcm, extensions=ext
-        )).from_byte(byte_seq)
-        return client_hello
+        return blocks.from_bytes(byte_seq)
 
     def unparse(self):
-        bb = BytesBuilder()
-        bb.append_int(self.legacy_version, 2)
-        bb.append_int(self.random, 32)
-        bb.append_variable_length(1, self.legacy_session_id.to_bytes(len(hex(self.legacy_session_id)[2:])))
-        bb.append_variable_length(2, self.cipher_suites)
+        ext_raw = b""
+        for extension in self.extensions:
+            ext_raw += ExtensionParser.unparse(extension, HandshakeType.client_hello)
+        return blocks.unparse(self.legacy_version,
+                              self.random,
+                              self.legacy_session_id,
+                              self.cipher_suites,
+                              self.legacy_compression_methods,
+                              ext_raw)
+
+
+blocks = Blocks([
+    Block(2, "byte", "int"),
+    Block(32, "byte", "int"),
+    Block(1, "byte", "raw", variable=True),
+    ListBlock(2, 2, "byte", "int", variable=True, each_after_parse=CipherSuite),
+    Block(1, "byte", "int", variable=True),
+    Block(2, "byte", "raw", variable=True, after_parse=lambda raw: ExtensionParser.parse(raw, HandshakeType.client_hello)),
+], after_parse=ClientHello)

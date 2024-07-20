@@ -1,14 +1,19 @@
 # -*- coding: UTF-8 -*-
 from reader import Blocks, Block
 from dataclasses import dataclass, field
-from common import HandshakeType
+from common import HandshakeType, ExtensionType
+from .extension_data import ExtensionData
 
 
 # TODO; 複数のホスト名にも対応する。
 @dataclass(frozen=True)
-class ServerName:
+class ServerName(ExtensionData):
     name: str
     name_type: int = field(default=0)
+
+    @property
+    def type(self) -> ExtensionType:
+        return ExtensionType.server_name
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
@@ -17,8 +22,8 @@ class ServerName:
         server_name = Blocks([
             Block(2, "byte", "int"),
             Block(1, "byte", "int"),
-            Block(2, "byte", "raw", variable=True, after_parse=lambda n: n.decode())
-        ], after_parse=lambda _, name_type, name: ServerName(name, name_type)).from_byte(byte_seq)
+            Block(2, "byte", "utf8", variable=True)
+        ], after_parse=lambda _, name_type, name: ServerName(name, name_type)).from_bytes(byte_seq)
         return server_name
 
     def unparse(self, handshake_type: HandshakeType):

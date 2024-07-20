@@ -1,35 +1,35 @@
 from dataclasses import dataclass
 
-from reader import BytesBuilder, Block, ListBlock
-from common import HandshakeType
+from reader import Block, ListBlock
+from common import HandshakeType, ExtensionType
+from .extension_data import ExtensionData
 
 
 @dataclass(frozen=True)
-class SupportedVersions:
+class SupportedVersions(ExtensionData):
     version: list[int]
+
+    @property
+    def type(self) -> ExtensionType:
+        return ExtensionType.supported_versions
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         version: list[int]
         match handshake_type:
             case HandshakeType.client_hello:
-                version = ListBlock(1, 2, "byte", "int", variable=True).from_byte(byte_seq)
+                version = ListBlock(1, 2, "byte", "int", variable=True).from_bytes(byte_seq)
             case HandshakeType.server_hello:  # and HelloRetryRequest
-                version = [Block(2, "byte", "int").from_byte(byte_seq)]
+                version = [Block(2, "byte", "int").from_bytes(byte_seq)]
             case _:
                 raise ValueError("supported_versionsはこのハンドシェイクタイプには送信しないでください")
         return SupportedVersions(version)
 
     def unparse(self, handshake_type: HandshakeType):
-        bb = BytesBuilder()
         if handshake_type == HandshakeType.client_hello:
-            ver_raw = b""
-            for ver in self.version:
-                ver_raw += ver.to_bytes(2)
-            bb.append(len(ver_raw).to_bytes(1) + ver_raw)
+            return ListBlock(1, 2, "byte", "int", variable=True).unparse(self.version)
         elif handshake_type == HandshakeType.server_hello:
             assert len(self.version) == 1
-            bb.append_int(self.version[0], 2)
+            return Block(2, "byte", "int").unparse(self.version[0])
         else:
             raise ValueError("supported_versionsをunparseできないhandshake_typeです")
-        return bb.to_bytes()

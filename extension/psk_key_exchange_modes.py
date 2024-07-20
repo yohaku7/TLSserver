@@ -1,6 +1,12 @@
 from enum import IntEnum
 from dataclasses import dataclass
-from reader import BytesBuilder, Block
+
+from common import ExtensionType
+from reader import Block
+from .extension_data import ExtensionData
+
+
+# Reference: RFC8446 §4.2.9
 
 
 class PskKeyExchangeMode(IntEnum):
@@ -10,15 +16,20 @@ class PskKeyExchangeMode(IntEnum):
 
 
 @dataclass(frozen=True)
-class PskKeyExchangeModes:
+class PskKeyExchangeModes(ExtensionData):
     ke_modes: PskKeyExchangeMode
+
+    @property
+    def type(self) -> ExtensionType:
+        return ExtensionType.psk_key_exchange_modes
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type):
-        return Block(1, "byte", "int", variable=True,
-                     after_parse=lambda ke_modes: PskKeyExchangeModes(PskKeyExchangeMode(ke_modes))).from_byte(byte_seq)
+        return block.from_bytes(byte_seq)
 
     def unparse(self, handshake_type):
-        bb = BytesBuilder()
-        bb.append_variable_length(1, self.ke_modes.value.to_bytes(1))
-        return bb.to_bytes()
+        return block.unparse(self.ke_modes)
+
+
+block = Block(1, "byte", "int", variable=True,
+              after_parse=lambda ke_modes: PskKeyExchangeModes(PskKeyExchangeMode(ke_modes)))
