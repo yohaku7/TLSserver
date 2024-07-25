@@ -32,9 +32,7 @@ class ClientHello:
     ])
 
     def unparse(self):
-        ext_raw = b""
-        for extension in self.extensions:
-            ext_raw += ExtensionParser.unparse(extension, HandshakeType.client_hello)
+        ext_raw = ExtensionParser.unparse(self.extensions, HandshakeType.client_hello)
         return ClientHello.blocks.unparse(self.legacy_version,
                                           self.random,
                                           self.legacy_session_id,

@@ -18,10 +18,10 @@ class ServerName(ExtensionData):
             Block(2, "byte", "utf8", variable=True)
         ], after_parse=lambda _, name_type, name: ServerName(name, name_type))
 
-    # def unparse(self, handshake_type: HandshakeType):
-    #     res = b""
-    #     res += self.name_type.to_bytes(1)
-    #     name_raw = self.name.encode()
-    #     name_raw_len = len(name_raw).to_bytes(2)
-    #     res += name_raw_len + name_raw
-    #     return len(res).to_bytes(2) + res
+    def unparse(self, handshake_type: HandshakeType):
+        res = b""
+        res += self.name_type.to_bytes(1)
+        name_raw = self.name.encode()
+        name_raw_len = len(name_raw).to_bytes(2)
+        res += name_raw_len + name_raw
+        return len(res).to_bytes(2) + res

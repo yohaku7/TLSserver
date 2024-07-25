@@ -3,18 +3,20 @@ import socket
 import pprint
 
 from alert import Alert
+from extension import ServerName
 from extension.key_share import KeyShareClientHello, KeyShareServerHello, KeyShareEntry
 from extension.psk_key_exchange_modes import PskKeyExchangeMode
 from extension.extension_parser import ExtensionParser, extensions_rev
-from handshake import Handshake, CipherSuite
+from handshake import Handshake, CipherSuite, EncryptedExtensions
 from reader.bytes_reader import BytesBuilder
-from record import ContentType, TLSPlaintext
+from record import ContentType, TLSPlaintext, TLSCiphertext
 from handshake import ClientHello, ServerHello
 from common import HandshakeType, ExtensionType, NamedGroup
 from reader import Blocks, Block, ListBlock, BytesReader, RestBlock
 
 import secrets
 from crypto import TLSKey
+from record.tls_inner_plaintext import TLSInnerPlaintext
 
 
 class TLSServer:
@@ -60,7 +62,9 @@ class TLSServer:
                         bb = BytesBuilder()
                         server_hello = self.make_server_hello(ch)
                         handshake = Handshake(HandshakeType.server_hello, len(server_hello.unparse()))
-                        new_tls_plaintext = TLSPlaintext(ContentType.handshake, 0x0303, len(Handshake.blocks.unparse(handshake)) + len(server_hello.unparse()))
+                        new_tls_plaintext = TLSPlaintext(ContentType.handshake, 0x0303,
+                                                         len(Handshake.blocks.unparse(handshake)) + len(
+                                                             server_hello.unparse()))
                         print(new_tls_plaintext)
                         print(handshake)
                         pprint.pprint(server_hello)
@@ -69,6 +73,27 @@ class TLSServer:
                             Handshake.blocks.unparse(handshake) +
                             server_hello.unparse()
                         )
+                        # encrypted_extensions
+                        self.__key.derive_secrets(b"", ch, server_hello)
+                        ee = self.make_encrypted_extensions()
+                        tls_inner_plaintext = TLSInnerPlaintext(
+                            ee.unparse(), ContentType.handshake, b""
+                        )
+                        # Refer: RFC8446 §5.2 "length: The length ..."
+                        # Refer: https://tex2e.github.io/rfc-translater/html/rfc5116.html#2-1--Authenticated-Encryption
+                        tls_ciphertext_len = len(tls_inner_plaintext.unparse()) + 16
+                        encrypted_tls_inner_plaintext, tag = self.__key.encrypt_handshake(tls_inner_plaintext.unparse(),
+                                                                                          ContentType.application_data,
+                                                                                          0x0303,
+                                                                                          tls_ciphertext_len)
+                        encrypted_tls_inner_plaintext += tag
+                        print(tls_ciphertext_len, encrypted_tls_inner_plaintext, len(encrypted_tls_inner_plaintext))
+                        assert tls_ciphertext_len == len(encrypted_tls_inner_plaintext)
+                        tls_ciphertext = TLSCiphertext(
+                            ContentType.application_data, 0x0303, len(encrypted_tls_inner_plaintext),
+                            encrypted_tls_inner_plaintext
+                        )
+                        self.send(TLSCiphertext.blocks.unparse(tls_ciphertext))
             case ContentType.alert:
                 print(": Alert")
                 pprint.pprint(br.read(Alert.blocks))
@@ -105,11 +130,6 @@ class TLSServer:
                                 for e in client_hello.extensions:
                                     if isinstance(e, KeyShareClientHello):
                                         self.__key.exchange_key_x25519(e.client_shares[0])
-                                        # key_share_group = e.client_shares[0].group
-                                        # assert key_share_group == NamedGroup.x25519
-                                        # key_share_raw = e.client_shares[0].key_exchange
-                                        # x25519_private_key = x25519.X25519PrivateKey.generate()
-                                        # x25519_private_key.exchange(x25519.X25519PublicKey.from_public_bytes(key_share_raw))
                                         extensions.append(
                                             KeyShareServerHello(
                                                 server_share=KeyShareEntry(
@@ -124,49 +144,15 @@ class TLSServer:
                             continue
             else:
                 raise ValueError(f"Extensionを処理できません。 名前：{client_extension.__class__.__name__}")
-            # match client_extension.type:
-            #     case ExtensionType.ec_point_formats:
-            #         assert 0 in client_extension.ec_point_formats
-            #         print("ECPointFormat = 0 (uncompressed)")
-            #     case ExtensionType.supported_versions:
-            #         assert 0x0304 in client_extension.version
-            #         print("Supported Versions: 0x0304 (TLS 1.3)")
-            #         extensions.append(SupportedVersions([0x0304]))
-            #     case ExtensionType.supported_groups:
-            #         if NamedGroup.x25519 in client_extension.named_group_list:
-            #             print("SupportedGroups: choose x25519")
-            #         else: raise NotImplementedError("Can't choose x25519. Abort.")
-            #     case ExtensionType.psk_key_exchange_modes:
-            #         if client_extension.ke_modes == PskKeyExchangeMode.psk_ke:
-            #             raise NotImplementedError("Can't process psk_ke.")
-            #         elif client_extension.ke_modes == PskKeyExchangeMode.psk_dhe_ke:
-            #             print("PskKeyExchangeMode: psk_dhe_ke")
-            #             # assert KeyShareClientHello in client_hello.extensions
-            #             for e in client_hello.extensions:
-            #                 if e.type == ExtensionType.key_share:
-            #                     key_share_group = e.client_shares[0].group
-            #                     assert key_share_group == NamedGroup.x25519
-            #                     key_share_raw = e.client_shares[0].key_exchange
-            #             x25519_private_key = x25519.X25519PrivateKey.generate()
-            #             x25519_private_key.exchange(x25519.X25519PublicKey.from_public_bytes(key_share_raw))
-            #             extensions.append(
-            #                 KeyShareServerHello(
-            #                     server_share=KeyShareEntry(
-            #                         group=NamedGroup.x25519,
-            #                         key_exchange=x25519_private_key.private_bytes_raw()
-            #                     )
-            #                 )
-            #             )
-            #     case ExtensionType.signature_algorithms:
-            #         pass
-            #
-            #     case _: continue
-
         return ServerHello(
             legacy_version, random,
             legacy_session_id_echo, cipher_suite,
             legacy_compression_method, extensions
         )
+
+    def make_encrypted_extensions(self):
+        sn = ServerName(name="www.yohaku7.jp")
+        return EncryptedExtensions([sn])
 
 
 def main():
