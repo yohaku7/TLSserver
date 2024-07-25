@@ -1,10 +1,11 @@
 from dataclasses import dataclass
-from reader import Block, ListBlock
-from common import ExtensionType, HandshakeType
-from .extension_data import ExtensionData
 from enum import IntEnum
 
+from reader import Blocks, EnumListBlock
+from .extension_data import ExtensionData, ExtensionReply
+
 __all__ = ["ECPointFormats"]
+
 
 # Reference: RFC8422, https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-parameters-9
 
@@ -19,18 +20,13 @@ class ECPointFormat(IntEnum):
 @dataclass(frozen=True)
 class ECPointFormats(ExtensionData):
     ec_point_formats: list[ECPointFormat]
+    blocks = Blocks([
+        EnumListBlock(1, 1, ECPointFormat, variable=True)
+    ])
 
-    @property
-    def type(self) -> ExtensionType:
-        return ExtensionType.ec_point_formats
-
-    @staticmethod
-    def parse(data: bytes, handshake_type: HandshakeType):
-        return _block.from_bytes(data)
-
-    def unparse(self, handshake_type: HandshakeType) -> bytes:
-        return _block.unparse(self.ec_point_formats)
+    def reply(self) -> ExtensionReply:
+        assert ECPointFormat.uncompressed in self.ec_point_formats
+        return ExtensionReply(f"ECPointFormat: {ECPointFormat.uncompressed}")
 
 
-_block = ListBlock(1, 1, "byte", "int", variable=True, each_after_parse=ECPointFormat,
-                   after_parse_factory=ECPointFormats)
+ECPointFormats.blocks.after_parse_factory = ECPointFormats

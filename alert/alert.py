@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import ClassVar
 
 from reader import Blocks, Block
+
 
 __all__ = ["AlertLevel", "Alert"]
 
@@ -43,20 +45,14 @@ class AlertDescription(IntEnum):
     # 255
 
 
-@dataclass(frozen=True)
+@dataclass
 class Alert:
     level: AlertLevel
     description: AlertDescription
-
-    @staticmethod
-    def parse(byte_seq: bytes):
-        return blocks.from_bytes(byte_seq)
-
-    def unparse(self):
-        return blocks.unparse(self.level, self.description)
+    blocks: ClassVar[Blocks] = Blocks([
+        Block(1, "byte", "int", after_parse=AlertLevel),
+        Block(1, "byte", "int", after_parse=AlertDescription)
+    ])
 
 
-blocks = Blocks([
-    Block(1, "byte", "int", after_parse=AlertLevel),
-    Block(1, "byte", "int", after_parse=AlertDescription)
-], after_parse_factory=Alert)
+Alert.blocks.after_parse_factory = Alert

@@ -1,6 +1,7 @@
 # -*- coding: UTF-8 -*-
 # RFC8446 §4.1.2 に基づいたClientHelloとエンコードされた実際のメッセージ（バイト列）。
 from dataclasses import dataclass
+from typing import ClassVar
 
 from common import HandshakeType
 from extension import ExtensionParser
@@ -20,27 +21,26 @@ class ClientHello:
     legacy_compression_methods: int
     extensions: list[ExtensionData]
 
-    @staticmethod
-    def parse(byte_seq: bytes):
-        return blocks.from_bytes(byte_seq)
+    blocks: ClassVar[Blocks] = Blocks([
+        Block(2, "byte", "int"),
+        Block(32, "byte", "int"),
+        Block(1, "byte", "raw", variable=True),
+        ListBlock(2, 2, "byte", "int", variable=True, each_after_parse=CipherSuite),
+        Block(1, "byte", "int", variable=True),
+        Block(2, "byte", "raw", variable=True,
+              after_parse=lambda raw: ExtensionParser.parse(raw, HandshakeType.client_hello)),
+    ])
 
     def unparse(self):
         ext_raw = b""
         for extension in self.extensions:
             ext_raw += ExtensionParser.unparse(extension, HandshakeType.client_hello)
-        return blocks.unparse(self.legacy_version,
-                              self.random,
-                              self.legacy_session_id,
-                              self.cipher_suites,
-                              self.legacy_compression_methods,
-                              ext_raw)
+        return ClientHello.blocks.unparse(self.legacy_version,
+                                          self.random,
+                                          self.legacy_session_id,
+                                          self.cipher_suites,
+                                          self.legacy_compression_methods,
+                                          ext_raw)
 
 
-blocks = Blocks([
-    Block(2, "byte", "int"),
-    Block(32, "byte", "int"),
-    Block(1, "byte", "raw", variable=True),
-    ListBlock(2, 2, "byte", "int", variable=True, each_after_parse=CipherSuite),
-    Block(1, "byte", "int", variable=True),
-    Block(2, "byte", "raw", variable=True, after_parse=lambda raw: ExtensionParser.parse(raw, HandshakeType.client_hello)),
-], after_parse=ClientHello)
+ClientHello.blocks.after_parse_factory = ClientHello

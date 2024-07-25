@@ -1,20 +1,27 @@
+from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
-from common import HandshakeType, ExtensionType
+from typing import ClassVar, Any
+from common import HandshakeType
+from reader import Blocks
 
-__all__ = ["ExtensionData"]
+__all__ = ["ExtensionData", "ExtensionReply"]
+
+
+@dataclass
+class ExtensionReply:
+    message: str
+    obj: Any | None = field(default=None)
 
 
 class ExtensionData(ABC):
-    @property
-    @abstractmethod
-    def type(self) -> ExtensionType:
-        pass
+    blocks: ClassVar[Blocks] = None
 
     @staticmethod
-    @abstractmethod
     def parse(data: bytes, handshake_type: HandshakeType):
-        pass
+        raise NotImplementedError("HandshakeTypeによって処理は変化しないので、parseは呼び出されるべきではありません。")
 
-    @abstractmethod
     def unparse(self, handshake_type: HandshakeType) -> bytes:
+        raise NotImplementedError("HandshakeTypeによって処理は変化しないので、unparseは呼び出されるべきではありません。")
+
+    def reply(self) -> ExtensionReply:
         pass

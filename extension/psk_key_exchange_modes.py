@@ -1,9 +1,7 @@
 from enum import IntEnum
+from reader import Blocks, EnumBlock
+from .extension_data import ExtensionData, ExtensionReply
 from dataclasses import dataclass
-
-from common import ExtensionType
-from reader import Block
-from .extension_data import ExtensionData
 
 
 # Reference: RFC8446 §4.2.9
@@ -18,18 +16,13 @@ class PskKeyExchangeMode(IntEnum):
 @dataclass(frozen=True)
 class PskKeyExchangeModes(ExtensionData):
     ke_modes: PskKeyExchangeMode
+    blocks = Blocks([
+        EnumBlock(1, PskKeyExchangeMode, variable=True)
+    ])
 
-    @property
-    def type(self) -> ExtensionType:
-        return ExtensionType.psk_key_exchange_modes
-
-    @staticmethod
-    def parse(byte_seq: bytes, handshake_type):
-        return block.from_bytes(byte_seq)
-
-    def unparse(self, handshake_type):
-        return block.unparse(self.ke_modes)
+    def reply(self) -> ExtensionReply:
+        assert self.ke_modes == PskKeyExchangeMode.psk_dhe_ke
 
 
-block = Block(1, "byte", "int", variable=True,
-              after_parse=lambda ke_modes: PskKeyExchangeModes(PskKeyExchangeMode(ke_modes)))
+
+PskKeyExchangeModes.blocks.after_parse_factory = PskKeyExchangeModes

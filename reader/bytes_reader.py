@@ -2,33 +2,34 @@
 # written by yohaku7
 from __future__ import annotations
 
-from typing import Literal, Callable, ClassVar
-from dataclasses import dataclass, field, replace
+from enum import IntEnum
+from typing import Literal, Callable
+from dataclasses import dataclass, field, is_dataclass, replace
 from Crypto.Util.number import long_to_bytes
-
-from common import ExtensionType, HandshakeType
 
 type Base = Literal["raw", "bin", "dec", "hex", "int", "utf8"]
 type Unit = Literal["bit", "byte"]
+type BlockKind = Block | ListBlock | RestBlock | EnumBlock | EnumListBlock | Blocks | BlocksLoop
+type DataKind = bytes | int | str
 
 __all__ = [
     "BytesReader",
-    "Block", "ListBlock", "Blocks", "RestBlock",
-    "ExtensionBlock"
+    "Block", "ListBlock", "Blocks", "RestBlock", "EnumBlock", "EnumListBlock", "BlocksLoop",
+    "from_bytes"
 ]
 
 
 @dataclass
-class Block:
+class Block[T]:
     size: int
     unit: Unit
     base: Base
     variable: bool = field(default=False, kw_only=True)
-    after_parse: Callable[[bytes | str | int], object] | None = \
+    after_parse: Callable[[DataKind], T] | None = \
         field(default=None, kw_only=True)
-    after_parse_factory: type | None = field(default=None, kw_only=True)
+    after_parse_factory: type[T] | None = field(default=None, kw_only=True)
 
-    def parse(self, br: "BytesReader"):
+    def parse(self, br: "BytesReader") -> DataKind | T:
         if self.variable:
             assert self.unit == "byte"
             parsed = br.read_variable_length(self.size, self.base)
@@ -43,7 +44,7 @@ class Block:
             return (lambda x: self.after_parse_factory(x))(parsed)
         return parsed
 
-    def unparse(self, obj: bytes | str | int) -> bytes:
+    def unparse(self, obj: DataKind) -> bytes:
         res: bytes
         block_size = 0 if self.variable else self.size
         match self.base:
@@ -66,7 +67,7 @@ class Block:
             res = length + res
         return res
 
-    def from_bytes(self, byte: bytes):
+    def from_bytes(self, byte: bytes) -> DataKind | T:
         br = BytesReader(byte)
         parsed = self.parse(br)
         assert br.rest_length == 0
@@ -74,19 +75,19 @@ class Block:
 
 
 @dataclass
-class ListBlock:
+class ListBlock[TEach, TAll]:
     size: int
     one_size: int
     unit: Unit
     base: Base
     variable: bool = field(default=False, kw_only=True)
-    each_after_parse: Callable[[bytes | str | int], object] | None = \
+    each_after_parse: Callable[[DataKind], TEach] | None = \
         field(default=None, kw_only=True)
-    after_parse: Callable[[list[bytes | str | int]], object] | None = \
+    after_parse: Callable[[list[DataKind]], TAll] | None = \
         field(default=None, kw_only=True)
     after_parse_factory: type | None = field(default=None, kw_only=True)
 
-    def parse(self, br: "BytesReader"):
+    def parse(self, br: "BytesReader") -> DataKind | TAll:
         if self.variable:
             assert self.unit == "byte"
             parsed = br.read_variable_length_per(self.size, self.one_size, self.base)
@@ -104,13 +105,13 @@ class ListBlock:
             return (lambda x: self.after_parse_factory(x))(parsed)
         return parsed
 
-    def from_bytes(self, byte: bytes):
+    def from_bytes(self, byte: bytes) -> DataKind | TAll:
         br = BytesReader(byte)
         parsed = self.parse(br)
         assert br.rest_length == 0
         return parsed
 
-    def unparse(self, obj_list: list[bytes | str | int]):
+    def unparse(self, obj_list: list[DataKind]) -> bytes:
         res = b""
         for obj in obj_list:
             match self.base:
@@ -135,25 +136,25 @@ class ListBlock:
 
 
 @dataclass
-class RestBlock:
+class RestBlock[T]:
     base: Base
-    after_parse: Callable[[bytes | str | int], object] | None = \
+    after_parse: Callable[[DataKind], T] | None = \
         field(default=None, kw_only=True)
 
-    def parse(self, br: "BytesReader"):
+    def parse(self, br: "BytesReader") -> DataKind | T:
         rest_bytes = br.read_rest_bytes(self.base)
         if self.after_parse is None:
             return rest_bytes
         else:
             return self.after_parse(rest_bytes)
 
-    def from_bytes(self, byte: bytes):
+    def from_bytes(self, byte: bytes) -> DataKind | T:
         br = BytesReader(byte)
         parsed = self.parse(br)
         assert br.rest_length == 0
         return parsed
 
-    def unparse(self, obj: bytes | str | int, size: int = 0):
+    def unparse(self, obj: DataKind, size: int = 0) -> bytes:
         res: bytes
         match self.base:
             case "raw":
@@ -174,41 +175,24 @@ class RestBlock:
 
 
 @dataclass
-class ExtensionBlock:
-    __type_block: ClassVar[Block] = Block(2, "byte", "int", after_parse=ExtensionType)
-
-    type: ExtensionType
-    data_blocks: Blocks
-
-    def parse(self, byte: bytes, handshake_type: HandshakeType | None = None):
-        br = BytesReader(byte)
-        type_val = ExtensionBlock.__type_block.parse(br)
-        assert type_val == self.type
-        data = self.data_blocks.parse(br)
-        return data
-
-    def from_bytes(self, byte: bytes, handshake_type: HandshakeType | None = None):
-        br = BytesReader(byte)
-        return self.parse(br)
-
-    def unparse(self, *objs: list[bytes | str | int], handshake_type: HandshakeType | None = None):
-        type_raw = ExtensionBlock.__type_block.unparse(self.type)
-        data_raw = self.data_blocks.unparse(*objs)
-        return type_raw + data_raw
-
-
-@dataclass
-class Blocks:
-    blocks: list[Block | ListBlock | Blocks]
+class Blocks[T]:
+    blocks: list[BlockKind]
     variable: bool = field(default=False, kw_only=True)
-    after_parse: Callable[[*tuple[..., ...]], object] | None = \
+    variable_header_size: int = field(default=None, kw_only=True)
+    after_parse: Callable[[*tuple[..., ...]], T] | None = \
         field(default=None, kw_only=True)
     after_parse_factory: type | None = field(default=None, kw_only=True)
 
-    def parse(self, br: "BytesReader"):
+    def parse(self, br: "BytesReader") -> DataKind | T:
         parsed_list = []
+        if self.variable:
+            assert self.variable_header_size is not None
+            proc_br = BytesReader(br.read_variable_length(self.variable_header_size, "raw"))
+        else:
+            assert self.variable_header_size is None
+            proc_br = br
         for block in self.blocks:
-            parsed_list.append(block.parse(br))
+            parsed_list.append(block.parse(proc_br))
         if self.after_parse is not None and self.after_parse_factory is not None:
             raise ValueError("Don't specify both after_parse and after_parse_factory")
         if self.after_parse is not None:
@@ -217,17 +201,121 @@ class Blocks:
             return (lambda *x: self.after_parse_factory(*x))(*parsed_list)
         return parsed_list
 
-    def from_bytes(self, byte: bytes):
+    def from_bytes(self, byte: bytes) -> DataKind | T:
         br = BytesReader(byte)
         parsed = self.parse(br)
         assert br.rest_length == 0
         return parsed
 
-    def unparse(self, *objs: bytes | str | int | list[bytes | str | int]) -> bytes:
+    def unparse(self, *objs_or_dataclass: object | DataKind | list[DataKind]) -> bytes:
+        if is_dataclass(objs_or_dataclass[0]):
+            # データクラスのフィールドを定義順にunparseさせる
+            objs_or_dataclass = list(objs_or_dataclass[0].__dict__.values())
         unparsed = b""
-        for block, obj in zip(self.blocks, objs, strict=True):
+        for block, obj in zip(self.blocks, objs_or_dataclass, strict=True):
             unparsed += block.unparse(obj)
+        if self.variable:
+            unparsed = long_to_bytes(len(unparsed), self.variable_header_size)
         return unparsed
+
+    def __add__(self, other: BlockKind):
+        return replace(
+            self,
+            blocks=[*self.blocks, other]
+        )
+
+    def __iadd__(self, other: BlockKind):
+        return replace(
+            self,
+            blocks=[*self.blocks, other]
+        )
+
+
+@dataclass
+class BlocksLoop[T]:
+    blocks: Blocks[T]
+
+    def parse(self, br: "BytesReader") -> list[T]:
+        res = []
+        while br.rest_length != 0:
+            res.append(br.read(self.blocks))
+        return res
+
+    def from_bytes(self, byte: bytes):
+        return self.parse(BytesReader(byte))
+
+    def unparse(self, objs: list[T]) -> bytes:
+        res = b""
+        for obj in objs:
+            res += self.blocks.unparse(obj)
+        return res
+
+
+def from_bytes[T1, T2: BlockKind, TResult](match: T1,
+                                           cases: dict[T1, T2],
+                                           byte: bytes,
+                                           *, not_match: T2 | None = None) -> DataKind | TResult:
+    if match in cases.keys():
+        return cases[match].from_bytes(byte)
+    else:
+        if not_match is not None:
+            return not_match
+        raise ValueError("Didn't match")
+
+
+@dataclass(frozen=True)
+class EnumBlock[T: IntEnum]:
+    size: int
+    enum: type[T]
+    variable: bool = field(default=False, kw_only=True)
+    unit: Unit = field(default="byte")
+
+    def parse(self, br: "BytesReader") -> T:
+        if self.variable:
+            assert self.unit == "byte"
+            value = br.read_variable_length(self.size, "int")
+        else:
+            bit_size = self.size if self.unit == "bit" else self.size * 8
+            value = br.read_bit(bit_size, "int")
+        return self.enum(value)
+
+    def from_bytes(self, data: bytes) -> T:
+        br = BytesReader(data)
+        return self.parse(br)
+
+    def unparse(self, obj: T) -> bytes:
+        return long_to_bytes(obj.value, self.size)
+
+
+@dataclass(frozen=True)
+class EnumListBlock[T: IntEnum]:
+    size: int
+    one_size: int
+    enum: type[T]
+    variable: bool = field(default=False, kw_only=True)
+    unit: Unit = field(default="byte")
+
+    def parse(self, br: "BytesReader") -> list[T]:
+        if self.variable:
+            assert self.unit == "byte"
+            values = br.read_variable_length_per(self.size, self.one_size, "int")
+        else:
+            bit_size = self.size if self.unit == "bit" else self.size * 8
+            one_size = self.one_size if self.unit == "bit" else self.one_size * 8
+            values = br.read_bit_per(bit_size, one_size, "int")
+        return list(map(self.enum, values))
+
+    def from_bytes(self, data: bytes) -> list[T]:
+        return self.parse(BytesReader(data))
+
+    def unparse(self, obj_list: list[T]) -> bytes:
+        res = b""
+        for obj in obj_list:
+            res += long_to_bytes(obj.value, self.one_size)
+        if self.variable:
+            length = len(res).to_bytes(self.size)
+            res = length + res
+        return res
 
 
 class BytesReader:
@@ -263,6 +351,9 @@ class BytesReader:
         if base == "utf8":
             assert byte_len is not None
             return int(binary, 2).to_bytes(length=byte_len, byteorder="big").decode("utf-8")
+
+    def read(self, block: BlockKind):
+        return block.parse(self)
 
     def read_bit(self, n: int, base: Base) -> int | str | bytes:
         """nビット、バイト列を読み、数値として返す"""
@@ -315,6 +406,17 @@ class BytesReader:
             raise ValueError("0bit以上の数値を指定してください。")
         if self.__bin_length < self.__bin_next_pos + n:
             raise EOFError("これ以上読み進められません。")
+
+
+class BytesBuilder:
+    def __init__(self):
+        self.result = b""
+
+    def append(self, data):
+        self.result += data
+
+    def to_bytes(self) -> bytes:
+        return self.result
 
 
 def main():

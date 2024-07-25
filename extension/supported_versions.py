@@ -1,17 +1,13 @@
 from dataclasses import dataclass
 
 from reader import Block, ListBlock
-from common import HandshakeType, ExtensionType
-from .extension_data import ExtensionData
+from common import HandshakeType
+from .extension_data import ExtensionData, ExtensionReply
 
 
 @dataclass(frozen=True)
 class SupportedVersions(ExtensionData):
     version: list[int]
-
-    @property
-    def type(self) -> ExtensionType:
-        return ExtensionType.supported_versions
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
@@ -33,3 +29,8 @@ class SupportedVersions(ExtensionData):
             return Block(2, "byte", "int").unparse(self.version[0])
         else:
             raise ValueError("supported_versionsをunparseできないhandshake_typeです")
+
+    def reply(self) -> ExtensionReply:
+        assert 0x0304 in self.version  # TLS 1.3
+        return ExtensionReply("Supported Version: 0x0304 (TLS 1.3)",
+                              SupportedVersions([0x0304]))

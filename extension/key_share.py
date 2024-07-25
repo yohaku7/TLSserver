@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from common import NamedGroup, HandshakeType, ExtensionType
-from reader import BytesReader, Block, Blocks
+from common import NamedGroup, HandshakeType
+from reader import Block, Blocks, BlocksLoop, from_bytes
 from .extension_data import ExtensionData
 
 __all__ = [
@@ -17,82 +17,53 @@ class KeyShareEntry:
     blocks: ClassVar[Blocks] = Blocks([
         Block(2, "byte", "int", after_parse=NamedGroup),
         Block(2, "byte", "raw", variable=True)
-    ], after_parse=lambda g, k: KeyShareEntry(g, k))
+    ])
+
+
+KeyShareEntry.blocks.after_parse_factory = KeyShareEntry
 
 
 @dataclass(frozen=True)
 class KeyShareClientHello(ExtensionData):
     client_shares: list[KeyShareEntry]
+    blocks = Blocks([
+        BlocksLoop(KeyShareEntry.blocks)
+    ], variable=True, variable_header_size=2)
 
-    @property
-    def type(self) -> ExtensionType:
-        return ExtensionType.key_share
 
-    @staticmethod
-    def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        br = BytesReader(Block(2, "byte", "raw", variable=True).from_bytes(byte_seq))
-        res = []
-        while br.rest_length != 0:
-            key_share_entry = KeyShareEntry.blocks.parse(br)
-            res.append(key_share_entry)
-        return KeyShareClientHello(res)
-
-    def unparse(self, handshake_type: HandshakeType) -> bytes:
-        res = b""
-        for client_share in self.client_shares:
-            res += KeyShareEntry.blocks.unparse(client_share.group, client_share.key_exchange)
-        res = Block(2, "byte", "raw", variable=True).unparse(res)
-        return res
+KeyShareClientHello.blocks.after_parse_factory = KeyShareClientHello
 
 
 @dataclass(frozen=True)
 class KeyShareHelloRetryRequest(ExtensionData):
     selected_group: NamedGroup
-    __blocks: ClassVar[Blocks] = Blocks([
+    blocks = Blocks([
         Block(2, "byte", "int", after_parse=NamedGroup)
-    ], after_parse=lambda g: KeyShareHelloRetryRequest(g))
+    ])
 
-    @property
-    def type(self) -> ExtensionType:
-        return ExtensionType.key_share
 
-    @staticmethod
-    def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        return KeyShareHelloRetryRequest.__blocks.from_bytes(byte_seq)
-
-    def unparse(self, handshake_type: HandshakeType) -> bytes:
-        return KeyShareHelloRetryRequest.__blocks.unparse(self.selected_group)
+KeyShareHelloRetryRequest.blocks.after_parse_factory = KeyShareHelloRetryRequest
 
 
 @dataclass(frozen=True)
 class KeyShareServerHello(ExtensionData):
     server_share: KeyShareEntry
-    __blocks: ClassVar[Blocks] = Blocks([
-        Block(2, "byte", "int", after_parse=NamedGroup),
-        Block(2, "byte", "raw", variable=True)
-    ], after_parse=lambda n, r: KeyShareServerHello(KeyShareEntry(n, r)))
+    blocks = Blocks([
+        KeyShareEntry.blocks
+    ])
 
-    @property
-    def type(self) -> ExtensionType:
-        return ExtensionType.key_share
 
-    @staticmethod
-    def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        return KeyShareServerHello.__blocks.from_bytes(byte_seq)
-
-    def unparse(self, handshake_type: HandshakeType) -> bytes:
-        return KeyShareServerHello.__blocks.unparse(
-            self.server_share.group, self.server_share.key_exchange
-        )
+KeyShareServerHello.blocks.after_parse_factory = KeyShareServerHello
 
 
 class KeyShare:
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        match handshake_type:
-            case HandshakeType.client_hello:
-                return KeyShareClientHello.parse(byte_seq, handshake_type)
-            case HandshakeType.server_hello:
-                return KeyShareServerHello.parse(byte_seq, handshake_type)
-            case _:
-                raise ValueError("key_shareをパースできません")
+        return from_bytes(
+            handshake_type,
+            {
+                HandshakeType.client_hello: KeyShareClientHello.blocks,
+                HandshakeType.server_hello: KeyShareServerHello.blocks
+            },
+            byte_seq
+        )
