@@ -1,12 +1,13 @@
+from tls_object import TLSIntEnum
 from enum import IntEnum
 
 
-class ExtensionType(IntEnum):
+class ExtensionType(TLSIntEnum, IntEnum):
     server_name = 0
     max_fragment_length = 1
     status_request = 5
     supported_groups = 10
-    ec_point_formats = 11  # TLS1.2以前
+    ec_point_formats = 11
     signature_algorithms = 13
     use_srtp = 14
     heartbeat = 15
@@ -31,4 +32,7 @@ class ExtensionType(IntEnum):
     key_share = 51
 
     renegotiation_info = 0xff01  # RFC5746
-    # 65535
+
+    @classmethod
+    def byte_length(cls) -> int:
+        return 2

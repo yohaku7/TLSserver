@@ -23,28 +23,14 @@ class ServerHello:
     legacy_compression_method: int
     extensions: list[ExtensionData]
     blocks: ClassVar[Blocks] = Blocks([
-        Block(2, "byte", "int"),
-        Block(32, "byte", "int"),
-        Block(1, "byte", "raw", variable=True),
-        Block(2, "byte", "int"),
-        Block(1, "byte", "int"),
-        Block(2, "byte", "raw", variable=True,
+        Block(2, "int"),
+        Block(32, "int"),
+        Block(1, "raw", variable=True),
+        Block(2, "int"),
+        Block(1, "int"),
+        Block(2, "raw", variable=True,
               after_parse=lambda ext: ExtensionParser.parse(ext, HandshakeType.server_hello))
     ])
-
-    # @staticmethod
-    # def make(ch: ClientHello):
-    #     cipher_suite = ch.cipher_suites[0]
-    #     return ServerHello(
-    #         legacy_version=0x0303,
-    #         legacy_compression_method=0,
-    #         random=getRandomNBitInteger(32 * 8),
-    #         legacy_session_id_echo=ch.legacy_session_id,
-    #         cipher_suite=cipher_suite,
-    #         extensions=[
-    #             SupportedVersions([0x0304]),
-    #         ],
-    #     )
 
     def unparse(self):
         ext_raw = ExtensionParser.unparse(self.extensions, HandshakeType.server_hello)

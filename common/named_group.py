@@ -1,13 +1,14 @@
+from tls_object import TLSIntEnum
 from enum import IntEnum
 
 
-class NamedGroup(IntEnum):
+class NamedGroup(TLSIntEnum, IntEnum):
     # ECDHE
     secp256r1 = 0x0017
     secp384r1 = 0x0018
     secp521r1 = 0x0019
-    x25519    = 0x001d
-    x448      = 0x001e
+    x25519 = 0x001d
+    x448 = 0x001e
 
     # DHE
     ffdhe2048 = 0x0100
@@ -16,4 +17,6 @@ class NamedGroup(IntEnum):
     ffdhe6144 = 0x0103
     ffdhe8192 = 0x0104
 
-    # 0xffff
+    @classmethod
+    def byte_length(cls) -> int:
+        return 2

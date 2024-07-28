@@ -50,8 +50,8 @@ class Alert:
     level: AlertLevel
     description: AlertDescription
     blocks: ClassVar[Blocks] = Blocks([
-        Block(1, "byte", "int", after_parse=AlertLevel),
-        Block(1, "byte", "int", after_parse=AlertDescription)
+        Block(1, "int", after_parse=AlertLevel),
+        Block(1, "int", after_parse=AlertDescription)
     ])
 
 

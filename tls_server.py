@@ -74,7 +74,7 @@ class TLSServer:
                             server_hello.unparse()
                         )
                         # encrypted_extensions
-                        self.__key.derive_secrets(b"", ch, server_hello)
+                        self.__key.derive_secrets(None, ch, server_hello)
                         ee = self.make_encrypted_extensions()
                         tls_inner_plaintext = TLSInnerPlaintext(
                             ee.unparse(), ContentType.handshake, b""

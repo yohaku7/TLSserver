@@ -3,7 +3,7 @@ import math
 from common import NamedGroup, HandshakeType
 from extension.key_share import KeyShareEntry
 from handshake import ClientHello, ServerHello, Handshake
-from reader import Blocks, Block
+from reader import Blocks, Block, ctx
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey, X25519PrivateKey
 from cryptography.hazmat.primitives.hmac import HMAC, hashes
@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from Crypto.Util.number import long_to_bytes
 
+import hashlib
 from record import TLSCiphertext, ContentType
 
 SHA256_HASH_LEN: int = 32
@@ -37,8 +38,12 @@ class TLSKey:
         self.server_x25519_public_key = self.server_x25519_private_key.public_key()
         self.x25519_shared_key = self.server_x25519_private_key.exchange(self.client_x25519_public_key)
 
-    def derive_secrets(self, psk: bytes, ch: ClientHello, sh: ServerHello):
-        early_secret = TLSKey.HKDF_Extract(b"", psk)
+    def derive_secrets(self, psk: bytes | None, ch: ClientHello, sh: ServerHello):
+        if psk is None:
+            psk = long_to_bytes(0, SHA256_HASH_LEN)
+        else:
+            assert len(psk) == SHA256_HASH_LEN
+        early_secret = TLSKey.HKDF_Extract(long_to_bytes(0, SHA256_HASH_LEN), psk)
         self.binder_key = TLSKey.Derive_Secret(early_secret, b"ext binder")
         self.client_early_traffic_secret = TLSKey.Derive_Secret(early_secret, b"c e traffic", ch)
         self.early_exporter_master_secret = TLSKey.Derive_Secret(early_secret, b"e exp master", ch)
@@ -82,9 +87,9 @@ class TLSKey:
     def HKDF_Expand_Label(secret: bytes, label: bytes, context: bytes, length: int):
         # https://tex2e.github.io/rfc-translater/html/rfc8446.html#7-1--Key-Schedule
         hkdf_label = Blocks([
-            Block(2, "byte", "int"),
-            Block(1, "byte", "raw", variable=True),
-            Block(1, "byte", "raw", variable=True)
+            Block(2, "int"),
+            Block(1, "raw", variable=True),
+            Block(1, "raw", variable=True)
         ]).unparse(
             length, b"tls13 " + label, context
         )
@@ -110,7 +115,7 @@ class TLSKey:
     def Derive_Secret(secret: bytes, label: bytes, *messages: ClientHello | ServerHello):
         t_hash: bytes
         if len(messages) == 0:
-            t_hash = b""
+            t_hash = long_to_bytes(0, SHA256_HASH_LEN)
         else:
             t_hash = TLSKey.Transcript_Hash(*messages)
         return TLSKey.HKDF_Expand_Label(secret, label, t_hash, SHA256_HASH_LEN)
@@ -147,6 +152,7 @@ def main():
     actual = TLSKey.HKDF_Expand_Label(
         initial_secret, b"client in", b"", SHA256_HASH_LEN
     )
+    print(TLSKey.HKDF_Expand_Label(initial_secret, b"client in ", b"", SHA256_HASH_LEN))
     assert actual == client_initial_secret
 
 

@@ -12,7 +12,7 @@ __all__ = ["SessionTicket"]
 class SessionTicket(ExtensionData):
     ticket: bytes
     blocks = Blocks([
-        Block(2, "byte", "raw", variable=True)
+        Block(2, "raw", variable=True)
     ])
 
     @staticmethod

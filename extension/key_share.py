@@ -15,8 +15,8 @@ class KeyShareEntry:
     group: NamedGroup
     key_exchange: bytes
     blocks: ClassVar[Blocks] = Blocks([
-        Block(2, "byte", "int", after_parse=NamedGroup),
-        Block(2, "byte", "raw", variable=True)
+        Block(2, "int", after_parse=NamedGroup),
+        Block(2, "raw", variable=True)
     ])
 
 
@@ -38,7 +38,7 @@ KeyShareClientHello.blocks.after_parse_factory = KeyShareClientHello
 class KeyShareHelloRetryRequest(ExtensionData):
     selected_group: NamedGroup
     blocks = Blocks([
-        Block(2, "byte", "int", after_parse=NamedGroup)
+        Block(2, "int", after_parse=NamedGroup)
     ])
 
 

@@ -7,7 +7,7 @@ from .extension_data import ExtensionData
 class RenegotiationInfo(ExtensionData):
     renegotiated_connection: bytes
     blocks = Blocks([
-        Block(1, "byte", "raw", variable=True)
+        Block(1, "raw", variable=True)
     ])
 
 

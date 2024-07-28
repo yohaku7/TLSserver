@@ -6,7 +6,7 @@ from typing import ClassVar
 from common import HandshakeType
 from extension import ExtensionParser
 from extension.extension_data import ExtensionData
-from reader import Block, ListBlock, Blocks
+from reader import Block, ListBlock, Blocks, ctx, NewBlocks
 from .cipher_suite import CipherSuite
 
 __all__ = ["ClientHello"]
@@ -22,12 +22,12 @@ class ClientHello:
     extensions: list[ExtensionData]
 
     blocks: ClassVar[Blocks] = Blocks([
-        Block(2, "byte", "int"),
-        Block(32, "byte", "int"),
-        Block(1, "byte", "raw", variable=True),
+        Block(2, "int"),
+        Block(32, "int"),
+        Block(1, "raw", variable=True),
         ListBlock(2, 2, "byte", "int", variable=True, each_after_parse=CipherSuite),
-        Block(1, "byte", "int", variable=True),
-        Block(2, "byte", "raw", variable=True,
+        Block(1, "int", variable=True),
+        Block(2, "raw", variable=True,
               after_parse=lambda raw: ExtensionParser.parse(raw, HandshakeType.client_hello)),
     ])
 

@@ -11,9 +11,9 @@ class TLSCiphertext:
     length: int
     encrypted_record: bytes
     blocks: ClassVar[Blocks] = Blocks([
-        EnumBlock(1, ContentType),
-        Block(2, "byte", "int"),
-        Block(2, "byte", "int"),
+        EnumBlock(ContentType),
+        Block(2, "int"),
+        Block(2, "int"),
         RestBlock("raw")
     ])
 

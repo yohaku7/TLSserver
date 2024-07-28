@@ -9,7 +9,7 @@ __all__ = ["RecordSizeLimit"]
 class RecordSizeLimit(ExtensionData):
     limit: int
     blocks = Blocks([
-        Block(2, "byte", "int")
+        Block(2, "int")
     ])
 
 

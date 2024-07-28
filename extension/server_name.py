@@ -13,9 +13,9 @@ class ServerName(ExtensionData):
     # 拡張子フィールド（byte_seq引数）には、RFC6066のServerNameListが入っていて、2byteヘッダの可変長
     # ベクトルとして表現されるので、最初にその2バイトを消費する。
     blocks = Blocks([
-            Block(2, "byte", "int"),
-            Block(1, "byte", "int"),
-            Block(2, "byte", "utf8", variable=True)
+            Block(2, "int"),
+            Block(1, "int"),
+            Block(2, "utf8", variable=True)
         ], after_parse=lambda _, name_type, name: ServerName(name, name_type))
 
     def unparse(self, handshake_type: HandshakeType):

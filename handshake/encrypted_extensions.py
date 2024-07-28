@@ -10,7 +10,7 @@ from common import HandshakeType
 class EncryptedExtensions:
     extensions: list[ExtensionData]
     blocks: ClassVar[Blocks] = Blocks([
-        Block(2, "byte", "raw", variable=True, after_parse=lambda x: ExtensionParser.parse(x, HandshakeType.encrypted_extensions))
+        Block(2, "raw", variable=True, after_parse=lambda x: ExtensionParser.parse(x, HandshakeType.encrypted_extensions))
     ])
 
     def unparse(self):

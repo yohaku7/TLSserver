@@ -42,8 +42,8 @@ extensions_rev[KeyShareServerHello] = ExtensionType.key_share
 extensions_rev[KeyShareClientHello] = ExtensionType.key_share
 
 _blocks = Blocks([
-    Block(2, "byte", "int", after_parse=ExtensionType),
-    Block(2, "byte", "raw", variable=True)
+    Block(2, "int", after_parse=ExtensionType),
+    Block(2, "raw", variable=True)
 ])
 
 

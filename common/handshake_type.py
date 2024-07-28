@@ -1,7 +1,8 @@
+from tls_object import TLSIntEnum
 from enum import IntEnum
 
 
-class HandshakeType(IntEnum):
+class HandshakeType(TLSIntEnum, IntEnum):
     client_hello = 1
     server_hello = 2
     new_session_ticket = 4
@@ -13,4 +14,7 @@ class HandshakeType(IntEnum):
     finished = 20
     key_update = 24
     message_hash = 254
-    # 255
+
+    @classmethod
+    def byte_length(cls) -> int:
+        return 1

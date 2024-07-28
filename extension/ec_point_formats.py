@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from tls_object import TLSIntEnum
 from enum import IntEnum
 
 from reader import Blocks, EnumListBlock
@@ -10,11 +11,14 @@ __all__ = ["ECPointFormats"]
 # Reference: RFC8422, https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-parameters-9
 
 
-class ECPointFormat(IntEnum):
+class ECPointFormat(TLSIntEnum, IntEnum):
     uncompressed = 0
     ansiX962_compressed_prime = 1
     ansiX962_compressed_char2 = 2
-    # 255
+
+    @classmethod
+    def byte_length(cls) -> int:
+        return 1
 
 
 @dataclass(frozen=True)

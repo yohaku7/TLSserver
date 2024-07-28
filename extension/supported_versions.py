@@ -16,7 +16,7 @@ class SupportedVersions(ExtensionData):
             case HandshakeType.client_hello:
                 version = ListBlock(1, 2, "byte", "int", variable=True).from_bytes(byte_seq)
             case HandshakeType.server_hello:  # and HelloRetryRequest
-                version = [Block(2, "byte", "int").from_bytes(byte_seq)]
+                version = [Block(2, "int").from_bytes(byte_seq)]
             case _:
                 raise ValueError("supported_versionsはこのハンドシェイクタイプには送信しないでください")
         return SupportedVersions(version)
@@ -26,7 +26,7 @@ class SupportedVersions(ExtensionData):
             return ListBlock(1, 2, "byte", "int", variable=True).unparse(self.version)
         elif handshake_type == HandshakeType.server_hello:
             assert len(self.version) == 1
-            return Block(2, "byte", "int").unparse(self.version[0])
+            return Block(2, "int").unparse(self.version[0])
         else:
             raise ValueError("supported_versionsをunparseできないhandshake_typeです")
 

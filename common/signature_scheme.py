@@ -1,7 +1,8 @@
+from tls_object import TLSIntEnum
 from enum import IntEnum
 
 
-class SignatureScheme(IntEnum):
+class SignatureScheme(TLSIntEnum, IntEnum):
     # refer:
     # https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-signaturescheme
     rsa_pkcs1_sha1 = 0x0201
@@ -47,4 +48,6 @@ class SignatureScheme(IntEnum):
     ecdsa_brainpoolP384r1tls13_sha384 = 0x081b
     ecdsa_brainpoolP512r1tls13_sha512 = 0x081c
 
-    # 0xffff
+    @classmethod
+    def byte_length(cls) -> int:
+        return 2
