@@ -6,7 +6,8 @@ from reader import Block, Blocks, BlocksLoop, from_bytes
 from .extension_data import ExtensionData
 
 __all__ = [
-    "KeyShare", "KeyShareServerHello", "KeyShareHelloRetryRequest", "KeyShareClientHello"
+    "KeyShare", "KeyShareServerHello", "KeyShareHelloRetryRequest", "KeyShareClientHello",
+    "KeyShareEntry"
 ]
 
 

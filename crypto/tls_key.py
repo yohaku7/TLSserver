@@ -3,7 +3,7 @@ import math
 from common import NamedGroup, HandshakeType
 from extension.key_share import KeyShareEntry
 from handshake import ClientHello, ServerHello, Handshake
-from reader import Blocks, Block, ctx
+from reader import Blocks, Block
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey, X25519PrivateKey
 from cryptography.hazmat.primitives.hmac import HMAC, hashes
@@ -11,7 +11,6 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from Crypto.Util.number import long_to_bytes
 
-import hashlib
 from record import TLSCiphertext, ContentType
 
 SHA256_HASH_LEN: int = 32
@@ -128,9 +127,9 @@ class TLSKey:
         aes128 = Cipher(algorithms.AES128(write_key), modes.GCM(self.calc_nonce(write_iv)))
         encryptor = aes128.encryptor()
         encryptor.authenticate_additional_data(
-            long_to_bytes(opaque_type) +
-            long_to_bytes(legacy_record_version) +
-            long_to_bytes(length)
+            long_to_bytes(opaque_type, 2) +
+            long_to_bytes(legacy_record_version, 2) +
+            long_to_bytes(length, 2)  # RFC8446 §5.2
         )
         return encryptor.update(data) + encryptor.finalize(), encryptor.tag
 
@@ -149,10 +148,7 @@ def main():
     # https://github.com/elliptic-shiho/tls13/blob/816fb6ee584965806ecbb9ecab249fd45e07c702/src/tls/crypto/cipher_suite.rs#L204-L219
     initial_secret = bytes.fromhex("7db5df06e7a69e432496adedb00851923595221596ae2ae9fb8115c1e9ed0a44")
     client_initial_secret = bytes.fromhex("c00cf151ca5be075ed0ebfb5c80323c42d6b7db67881289af4008f1f6c357aea")
-    actual = TLSKey.HKDF_Expand_Label(
-        initial_secret, b"client in", b"", SHA256_HASH_LEN
-    )
-    print(TLSKey.HKDF_Expand_Label(initial_secret, b"client in ", b"", SHA256_HASH_LEN))
+    actual = TLSKey.HKDF_Expand_Label(initial_secret, b"client in", b"", SHA256_HASH_LEN)
     assert actual == client_initial_secret
 
 

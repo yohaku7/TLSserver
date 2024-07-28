@@ -22,6 +22,7 @@ from record.tls_inner_plaintext import TLSInnerPlaintext
 class TLSServer:
     def __init__(self, dst: str = "localhost", ip: int = 8080):
         self.__sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.__sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # 接続の高速化
         self.__sock.bind((dst, ip))
         self.__conn = None
         self.__key = TLSKey()
@@ -127,19 +128,18 @@ class TLSServer:
                                 raise NotImplementedError("Can't process psk_ke.")
                             elif client_extension.ke_modes == PskKeyExchangeMode.psk_dhe_ke:
                                 print("PskKeyExchangeMode: psk_dhe_ke")
-                                for e in client_hello.extensions:
-                                    if isinstance(e, KeyShareClientHello):
-                                        self.__key.exchange_key_x25519(e.client_shares[0])
-                                        extensions.append(
-                                            KeyShareServerHello(
-                                                server_share=KeyShareEntry(
-                                                    group=NamedGroup.x25519,
-                                                    key_exchange=self.__key.server_x25519_public_key.public_bytes_raw()
-                                                )
+                        case ExtensionType.signature_algorithms:
+                            for e in client_hello.extensions:
+                                if isinstance(e, KeyShareClientHello):
+                                    self.__key.exchange_key_x25519(e.client_shares[0])
+                                    extensions.append(
+                                        KeyShareServerHello(
+                                            server_share=KeyShareEntry(
+                                                group=NamedGroup.x25519,
+                                                key_exchange=self.__key.server_x25519_public_key.public_bytes_raw()
                                             )
                                         )
-                        case ExtensionType.signature_algorithms:
-                            pass
+                                    )
                         case _:
                             continue
             else:
