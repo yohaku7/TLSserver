@@ -234,7 +234,7 @@ class Blocks[T]:
         for block, obj in zip(self.blocks, objs_or_dataclass, strict=True):
             unparsed += block.unparse(obj)
         if self.variable:
-            unparsed = long_to_bytes(len(unparsed), self.variable_header_size)
+            unparsed = long_to_bytes(len(unparsed), self.variable_header_size) + unparsed
         return unparsed
 
     def __add__(self, other: _BlockKind):

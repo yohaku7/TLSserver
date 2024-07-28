@@ -112,11 +112,7 @@ class TLSKey:
 
     @staticmethod
     def Derive_Secret(secret: bytes, label: bytes, *messages: ClientHello | ServerHello):
-        t_hash: bytes
-        if len(messages) == 0:
-            t_hash = long_to_bytes(0, SHA256_HASH_LEN)
-        else:
-            t_hash = TLSKey.Transcript_Hash(*messages)
+        t_hash = TLSKey.Transcript_Hash(*messages)
         return TLSKey.HKDF_Expand_Label(secret, label, t_hash, SHA256_HASH_LEN)
 
     def encrypt_handshake(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int):
@@ -127,8 +123,8 @@ class TLSKey:
         aes128 = Cipher(algorithms.AES128(write_key), modes.GCM(self.calc_nonce(write_iv)))
         encryptor = aes128.encryptor()
         encryptor.authenticate_additional_data(
-            long_to_bytes(opaque_type, 2) +
-            long_to_bytes(legacy_record_version, 2) +
+            long_to_bytes(opaque_type) +
+            long_to_bytes(legacy_record_version) +
             long_to_bytes(length, 2)  # RFC8446 §5.2
         )
         return encryptor.update(data) + encryptor.finalize(), encryptor.tag

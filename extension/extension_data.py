@@ -24,4 +24,4 @@ class ExtensionData(ABC):
         raise NotImplementedError("HandshakeTypeによって処理は変化しないので、unparseは呼び出されるべきではありません。")
 
     def reply(self) -> ExtensionReply:
-        pass
+        raise NotImplementedError

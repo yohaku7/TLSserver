@@ -77,8 +77,12 @@ class TLSServer:
                         # encrypted_extensions
                         self.__key.derive_secrets(None, ch, server_hello)
                         ee = self.make_encrypted_extensions()
+                        new_handshake = Handshake(
+                            msg_type=HandshakeType.encrypted_extensions,
+                            length=len(ee.unparse())
+                        )
                         tls_inner_plaintext = TLSInnerPlaintext(
-                            ee.unparse(), ContentType.handshake, b""
+                            Handshake.blocks.unparse(new_handshake) + ee.unparse(), ContentType.handshake, b""
                         )
                         # Refer: RFC8446 §5.2 "length: The length ..."
                         # Refer: https://tex2e.github.io/rfc-translater/html/rfc5116.html#2-1--Authenticated-Encryption

@@ -68,3 +68,16 @@ class KeyShare:
             },
             byte_seq
         )
+
+
+if __name__ == '__main__':
+    x = KeyShareClientHello(client_shares=[KeyShareEntry(group=NamedGroup.x25519,
+    key_exchange = b'+Y\x1d\x9f'
+                   b'\xb8O\x7f\xab'
+                   b'\x82\x80\x19\x05'
+                   b'\xa2\xed+f'
+                   b"?'(\xf8"
+                   b'\xcf\xb5\xee\xc8'
+                   b'\xf4\xbf\x16p'
+                   b'\xd8\x1e\xb3=')])
+    print(x.blocks.unparse(x))
