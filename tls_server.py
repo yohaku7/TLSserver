@@ -1,7 +1,6 @@
 # -*- coding: UTF-8 -*-
 import socket
 import pprint
-from dataclasses import dataclass
 
 from cryptography.hazmat.primitives._serialization import Encoding
 from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
