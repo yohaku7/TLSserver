@@ -10,12 +10,13 @@ from ._types import *
 from .ctx import _ContextBase
 from tls_object import TLSIntEnum
 from .bytes_reader import BytesReader
+from .fields import _TLSField
 
-type _BlockKind = Block | ListBlock | RestBlock | EnumBlock | EnumListBlock | Blocks | BlocksLoop
+type _BlockKind = Block | ListBlock | RestBlock | EnumBlock | EnumListBlock | Blocks | BlocksLoop | _TLSField
 
 __all__ = [
     "Block", "ListBlock", "Blocks", "RestBlock", "EnumBlock", "EnumListBlock", "BlocksLoop",
-    "_BlockKind", "NewBlocks",
+    "_BlockKind", "NewBlocks", "BlockObj",
     "from_bytes"
 ]
 

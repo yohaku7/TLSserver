@@ -4,10 +4,11 @@ from typing import ClassVar
 from reader import Blocks, Block
 from extension.extension_parser import ExtensionParser
 from common import HandshakeType
+from .tls_handshake import TLSHandshake
 
 
 @dataclass(frozen=True)
-class EncryptedExtensions:
+class EncryptedExtensions(TLSHandshake):
     extensions: list[ExtensionData]
     blocks: ClassVar[Blocks] = Blocks([
         Block(2, "raw", variable=True, after_parse=lambda x: ExtensionParser.parse(x, HandshakeType.encrypted_extensions))

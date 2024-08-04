@@ -11,6 +11,10 @@ if typing.TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class _ContextBase(ABC):
+    @property
+    def data(self) -> bytes:
+        pass
+
     @abstractmethod
     def read(self, br: BytesReader) -> bytes:
         pass

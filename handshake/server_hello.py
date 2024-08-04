@@ -1,21 +1,18 @@
 from dataclasses import dataclass
-from Crypto.Util.number import getRandomNBitInteger
 from typing import ClassVar
 
 from .cipher_suite import CipherSuite
-from .client_hello import ClientHello
-
+from .tls_handshake import TLSHandshake
 from extension import ExtensionParser
 from extension.extension_data import ExtensionData
-from extension.supported_versions import SupportedVersions
 from common import HandshakeType
-from reader import Blocks, Block
+from reader import Blocks, Block, UInt16, UInt, Variable, Raw, UInt8
 
 __all__ = ["ServerHello"]
 
 
 @dataclass(frozen=True)
-class ServerHello:
+class ServerHello(TLSHandshake):
     legacy_version: int
     random: int
     legacy_session_id_echo: bytes

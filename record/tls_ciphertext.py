@@ -1,4 +1,4 @@
-from .content_type import ContentType
+from common import ContentType
 from dataclasses import dataclass
 from typing import ClassVar
 from reader import Blocks, Block, EnumBlock, RestBlock

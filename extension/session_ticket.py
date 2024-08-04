@@ -8,18 +8,21 @@ from .extension_data import ExtensionData
 __all__ = ["SessionTicket"]
 
 
+"""
+If the client does not have a ticket and is prepared to receive one in the NewSessionTicket handshake message,
+then it MUST include a zero-length ticket in the SessionTicket extension.
+"""
+
+
 @dataclass(frozen=True)
 class SessionTicket(ExtensionData):
     ticket: bytes
-    blocks = Blocks([
-        Block(2, "raw", variable=True)
-    ])
 
     @staticmethod
     def parse(byte_seq: bytes, handshake_type: HandshakeType):
         if byte_seq == b"":
             return SessionTicket(b"")
-        return block.from_bytes(byte_seq)
+        return SessionTicket.blocks.from_bytes(byte_seq)
 
-
-SessionTicket.blocks.after_parse_factory = SessionTicket
+    def unparse(self, handshake_type: HandshakeType) -> bytes:
+        return b""

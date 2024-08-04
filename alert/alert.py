@@ -1,20 +1,23 @@
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import ClassVar
-
-from reader import Blocks, Block
+from reader import Blocks, EnumBlock
+from tls_object import TLSIntEnum
 
 
 __all__ = ["AlertLevel", "Alert"]
 
 
-class AlertLevel(IntEnum):
+class AlertLevel(TLSIntEnum, IntEnum):
     warning = 1
     fatal = 2
-    # 255
+
+    @classmethod
+    def byte_length(cls) -> int:
+        return 1
 
 
-class AlertDescription(IntEnum):
+class AlertDescription(TLSIntEnum, IntEnum):
     close_notify = 0
     unexpected_message = 10
     bad_record_mac = 20
@@ -42,16 +45,19 @@ class AlertDescription(IntEnum):
     unknown_psk_identity = 115
     certificate_required = 116
     no_application_protocol = 120
-    # 255
+
+    @classmethod
+    def byte_length(cls) -> int:
+        return 1
 
 
-@dataclass
+@dataclass(frozen=True)
 class Alert:
     level: AlertLevel
     description: AlertDescription
     blocks: ClassVar[Blocks] = Blocks([
-        Block(1, "int", after_parse=AlertLevel),
-        Block(1, "int", after_parse=AlertDescription)
+        EnumBlock(AlertLevel),
+        EnumBlock(AlertDescription)
     ])
 
 

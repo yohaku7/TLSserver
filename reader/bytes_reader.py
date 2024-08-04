@@ -70,7 +70,7 @@ class BytesReader:
             res.append(self.__convert_base(raw_i, base))
         return res
 
-    def read_byte(self, n: int, base: _Base) -> int:
+    def read_byte(self, n: int, base: _Base):
         """nバイト、バイト列を読み、数値として返す"""
         return self.read_bit(n * 8, base)
 

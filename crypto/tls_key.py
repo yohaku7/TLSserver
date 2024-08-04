@@ -1,6 +1,6 @@
 import math
 
-from common import NamedGroup, HandshakeType
+from common import NamedGroup, ContentType
 from extension.key_share import KeyShareEntry
 from handshake import ClientHello, ServerHello, Handshake
 from reader import Blocks, Block
@@ -8,10 +8,11 @@ from reader import Blocks, Block
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey, X25519PrivateKey
 from cryptography.hazmat.primitives.hmac import HMAC, hashes
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography import x509
 
 from Crypto.Util.number import long_to_bytes
 
-from record import TLSCiphertext, ContentType
 
 SHA256_HASH_LEN: int = 32
 
@@ -28,7 +29,16 @@ class TLSKey:
         self.client_handshake_traffic_secret: bytes | None = None
         self.server_handshake_traffic_secret: bytes | None = None
 
-        self.seq: int = 0
+        self.seq_server: int = 0
+        self.seq_client: int = 0
+
+        self.__secret_state: bytes | None = None
+
+        self.master_secret: bytes | None = None
+        self.client_application_traffic_secret: list[bytes] = []
+        self.server_application_traffic_secret: list[bytes] = []
+        self.exporter_master_secret: bytes | None = None
+        self.resumption_master_secret: bytes | None = None
 
     def exchange_key_x25519(self, entry: KeyShareEntry):
         assert entry.group == NamedGroup.x25519
@@ -54,17 +64,21 @@ class TLSKey:
         handshake_secret = TLSKey.HKDF_Extract(secret_state, self.x25519_shared_key)
         self.client_handshake_traffic_secret = TLSKey.Derive_Secret(handshake_secret, b"c hs traffic", ch, sh)
         self.server_handshake_traffic_secret = TLSKey.Derive_Secret(handshake_secret, b"s hs traffic", ch, sh)
+        print(f"sss: {self.server_handshake_traffic_secret.hex()}")
 
         secret_state = TLSKey.Derive_Secret(handshake_secret, b"derived")
+        self.__secret_state = secret_state
 
-        # TODO: さらなる鍵の生成
+    @staticmethod
+    def HMAC(key: bytes, data: bytes):
+        hmac = HMAC(key, hashes.SHA256())
+        hmac.update(data)
+        return hmac.finalize()
 
     @staticmethod
     def HKDF_Extract(salt: bytes, ikm: bytes) -> bytes:
         # RFC5869 §2.2
-        hmac = HMAC(salt, hashes.SHA256())
-        hmac.update(ikm)
-        return hmac.finalize()
+        return TLSKey.HMAC(salt, ikm)
 
     @staticmethod
     def HKDF_Expand(extracted_key: bytes, context: bytes, length: int) -> bytes:
@@ -100,13 +114,8 @@ class TLSKey:
         sha256 = hashes.Hash(hashes.SHA256())
         raw = b""
         for m in M:
-            if isinstance(m, ClientHello):
-                hs = Handshake(HandshakeType.client_hello, len(m.unparse()))
-            elif isinstance(m, ServerHello):
-                hs = Handshake(HandshakeType.server_hello, len(m.unparse()))
-            else:
-                raise ValueError(f"Can't calc Transcript-Hash. obj: {type(m)}")
-            raw += Handshake.blocks.unparse(hs) + m.unparse()
+            hs = Handshake.make(m)
+            raw += Handshake.blocks.unparse(hs)
         sha256.update(raw)
         return sha256.finalize()
 
@@ -120,7 +129,7 @@ class TLSKey:
         assert self.server_handshake_traffic_secret is not None
         write_key = TLSKey.HKDF_Expand_Label(self.server_handshake_traffic_secret, b"key", b"", 16)
         write_iv = TLSKey.HKDF_Expand_Label(self.server_handshake_traffic_secret, b"iv", b"", 12)
-        aes128 = Cipher(algorithms.AES128(write_key), modes.GCM(self.calc_nonce(write_iv)))
+        aes128 = Cipher(algorithms.AES128(write_key), modes.GCM(self.calc_nonce(write_iv, "server")))
         encryptor = aes128.encryptor()
         encryptor.authenticate_additional_data(
             long_to_bytes(opaque_type) +
@@ -129,14 +138,80 @@ class TLSKey:
         )
         return encryptor.update(data) + encryptor.finalize(), encryptor.tag
 
-    def calc_nonce(self, write_iv: bytes):
+    def decrypt_handshake(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int):
+        tag = data[-16:]
+        real_data = data[:-16]
+        assert self.client_handshake_traffic_secret is not None
+        write_key = TLSKey.HKDF_Expand_Label(self.client_handshake_traffic_secret, b"key", b"", 16)
+        write_iv = TLSKey.HKDF_Expand_Label(self.client_handshake_traffic_secret, b"iv", b"", 12)
+        aes128 = Cipher(algorithms.AES128(write_key), modes.GCM(self.calc_nonce(write_iv, "client")))
+        decryptor = aes128.decryptor()
+        decryptor.authenticate_additional_data(
+            long_to_bytes(opaque_type) +
+            long_to_bytes(legacy_record_version) +
+            long_to_bytes(length, 2)  # RFC8446 §5.2
+        )
+        return decryptor.update(real_data) + decryptor.finalize_with_tag(tag)
+
+    def decrypt_application_data(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int):
+        tag = data[-16:]
+        real_data = data[:-16]
+        assert self.client_application_traffic_secret[0] is not None
+        write_key = TLSKey.HKDF_Expand_Label(self.client_application_traffic_secret[0], b"key", b"", 16)
+        write_iv = TLSKey.HKDF_Expand_Label(self.client_application_traffic_secret[0], b"iv", b"", 12)
+        aes128 = Cipher(algorithms.AES128(write_key), modes.GCM(self.calc_nonce(write_iv, "client")))
+        decryptor = aes128.decryptor()
+        decryptor.authenticate_additional_data(
+            long_to_bytes(opaque_type) +
+            long_to_bytes(legacy_record_version) +
+            long_to_bytes(length, 2)  # RFC8446 §5.2
+        )
+        return decryptor.update(real_data) + decryptor.finalize_with_tag(tag)
+
+    def make_application_key(self, handshake_ctx, client_finished):
+        self.master_secret = TLSKey.HKDF_Extract(self.__secret_state, b"\00" * 32)
+        self.client_application_traffic_secret.append(
+            TLSKey.Derive_Secret(self.master_secret, b"c ap traffic",
+                                 *handshake_ctx)
+        )
+        self.server_application_traffic_secret.append(
+            TLSKey.Derive_Secret(self.master_secret, b"s ap traffic",
+                                 *handshake_ctx)
+        )
+        self.exporter_master_secret = TLSKey.Derive_Secret(self.master_secret, b"exp master", *handshake_ctx)
+        self.resumption_master_secret = TLSKey.Derive_Secret(self.master_secret, b"res master",
+                                                              *[*handshake_ctx, client_finished])
+
+    def calc_nonce(self, write_iv: bytes, side: str):
         # RFC8446 §5.3, RFC5116 §5.1
         iv_length = 12  # RFC5116 §5.1
-        seq_bin = long_to_bytes(self.seq, iv_length)
+        if side == "server":
+            seq_bin = long_to_bytes(self.seq_server, iv_length)
+        elif side == "client":
+            seq_bin = long_to_bytes(self.seq_client, iv_length)
+        else:
+            0/0
         return bytes(x1 ^ x2 for x1, x2 in zip(write_iv, seq_bin))
 
-    def seq_upd(self):
-        self.seq += 1
+    def seq_upd_server(self):
+        self.seq_server += 1
+
+    def seq_upd_client(self):
+        self.seq_client += 1
+
+    @staticmethod
+    def load_x509_cert(data_path: str):
+        with open(data_path, "rb") as f:
+            cert = f.read()
+            cert = x509.load_pem_x509_certificate(cert)
+        return cert
+
+    @staticmethod
+    def load_x509_key(data_path: str):
+        with open(data_path, "rb") as f:
+            private_key = f.read()
+            private_key = load_pem_private_key(private_key, None)
+        return private_key
 
 
 def main():
