@@ -1,14 +1,14 @@
 from dataclasses import dataclass
-from reader import Block, Blocks
-from .extension_data import ExtensionData
+from reader import new
+from reader.new import BytesConverter, BytesConvertable
 
 
 @dataclass(frozen=True)
-class RenegotiationInfo(ExtensionData):
+class RenegotiationInfo(new.TLSObject):
     renegotiated_connection: bytes
-    blocks = Blocks([
-        Block(1, "raw", variable=True)
-    ])
 
-
-RenegotiationInfo.blocks.after_parse_factory = RenegotiationInfo
+    @classmethod
+    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+        return [
+            new.Block(new.Variable(1))
+        ]

@@ -1,13 +1,10 @@
 from dataclasses import dataclass
-from .extension_data import ExtensionData
+from reader import new
+from reader.new import BytesConverter, BytesConvertable
 
 
 @dataclass(frozen=True)
-class ExtendedMasterSecret(ExtensionData):
-    @staticmethod
-    def parse(byte_seq: bytes, handshake_type):
-        assert byte_seq == b""
-        return ExtendedMasterSecret()
-
-    def unparse(self, handshake_type):
-        return b""
+class ExtendedMasterSecret(new.TLSObject):
+    @classmethod
+    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+        return []

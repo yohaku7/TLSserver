@@ -153,6 +153,19 @@ class TLSKey:
         )
         return decryptor.update(real_data) + decryptor.finalize_with_tag(tag)
 
+    def encrypt_application_data(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int):
+        assert self.server_application_traffic_secret[0] is not None
+        write_key = TLSKey.HKDF_Expand_Label(self.server_application_traffic_secret[0], b"key", b"", 16)
+        write_iv = TLSKey.HKDF_Expand_Label(self.server_application_traffic_secret[0], b"iv", b"", 12)
+        aes128 = Cipher(algorithms.AES128(write_key), modes.GCM(self.calc_nonce(write_iv, "client")))
+        encryptor = aes128.encryptor()
+        encryptor.authenticate_additional_data(
+            long_to_bytes(opaque_type) +
+            long_to_bytes(legacy_record_version) +
+            long_to_bytes(length, 2)  # RFC8446 §5.2
+        )
+        return encryptor.update(data) + encryptor.finalize()
+
     def decrypt_application_data(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int):
         tag = data[-16:]
         real_data = data[:-16]

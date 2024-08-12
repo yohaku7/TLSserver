@@ -1,6 +1,6 @@
+from reader.new import BytesConverter, BytesConvertable
 from tls_object import TLSIntEnum
-from reader import Blocks, EnumBlock
-from .extension_data import ExtensionData, ExtensionReply
+from reader import Blocks, EnumBlock, new
 from dataclasses import dataclass
 from enum import IntEnum
 
@@ -18,14 +18,14 @@ class PskKeyExchangeMode(TLSIntEnum, IntEnum):
 
 
 @dataclass(frozen=True)
-class PskKeyExchangeModes(ExtensionData):
+class PskKeyExchangeModes(new.TLSObject):
     ke_modes: PskKeyExchangeMode
-    blocks = Blocks([
-        EnumBlock(PskKeyExchangeMode, variable=True, variable_header_size=1)
-    ])
 
-    def reply(self) -> ExtensionReply:
+    @classmethod
+    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+        return [
+            new.Block(new.Variable(1))
+        ]
+
+    def reply(self):
         assert self.ke_modes == PskKeyExchangeMode.psk_dhe_ke
-
-
-PskKeyExchangeModes.blocks.after_parse_factory = PskKeyExchangeModes

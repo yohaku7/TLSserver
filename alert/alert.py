@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import ClassVar
-from reader import Blocks, EnumBlock
+from reader.new import BytesConverter, BytesConvertable
 from tls_object import TLSIntEnum
+from reader import new
 
 
 __all__ = ["AlertLevel", "Alert"]
@@ -52,13 +52,13 @@ class AlertDescription(TLSIntEnum, IntEnum):
 
 
 @dataclass(frozen=True)
-class Alert:
+class Alert(new.TLSObject):
     level: AlertLevel
     description: AlertDescription
-    blocks: ClassVar[Blocks] = Blocks([
-        EnumBlock(AlertLevel),
-        EnumBlock(AlertDescription)
-    ])
 
-
-Alert.blocks.after_parse_factory = Alert
+    @classmethod
+    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+        return [
+            new.Block(1),
+            new.Block(1)
+        ]

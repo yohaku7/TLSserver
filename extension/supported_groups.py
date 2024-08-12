@@ -1,19 +1,20 @@
 from dataclasses import dataclass
 from common import NamedGroup
-from reader import Blocks, EnumListBlock
-from .extension_data import ExtensionData, ExtensionReply
+from reader import new
+from reader.new import BytesConverter, BytesConvertable
+from .extension_data import ExtensionReply
 
 
 @dataclass(frozen=True)
-class SupportedGroups(ExtensionData):
+class SupportedGroups(new.TLSObject):
     named_group_list: list[NamedGroup]
-    blocks = Blocks([
-        EnumListBlock(2, 2, NamedGroup, variable=True)
-    ])
 
     def reply(self) -> ExtensionReply:
         assert NamedGroup.x25519 in self.named_group_list
         return ExtensionReply(f"Supported Groups: {NamedGroup.x25519}")
 
-
-SupportedGroups.blocks.after_parse_factory = SupportedGroups
+    @classmethod
+    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+        return [
+            new.Block(new.Variable(2), split=2)
+        ]

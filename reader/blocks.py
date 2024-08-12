@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import enum
 from typing import Callable
-from dataclasses import dataclass, field, is_dataclass, replace
+from dataclasses import dataclass, field, is_dataclass
 from Crypto.Util.number import long_to_bytes
 from ._types import *
 from .ctx import _ContextBase
@@ -16,7 +16,7 @@ type _BlockKind = Block | ListBlock | RestBlock | EnumBlock | EnumListBlock | Bl
 
 __all__ = [
     "Block", "ListBlock", "Blocks", "RestBlock", "EnumBlock", "EnumListBlock", "BlocksLoop",
-    "_BlockKind", "NewBlocks", "BlockObj",
+    "_BlockKind", "BlockObj",
     "from_bytes"
 ]
 
@@ -103,10 +103,8 @@ class ListBlock[TEach, TAll]:
             assert self.unit == "byte"
             parsed = br.read_variable_length_per(self.size, self.one_size, self.base)
         else:
-            # bit_size = self.size if self.unit == "bit" else self.size * 8
-            # one_size = self.one_size if self.unit == "bit" else self.one_size * 8
-            # parsed = br.read_bit_per(bit_size, one_size, self.base)
-            parsed = br.read_byte_per(self.size, self.one_size, self.base)
+            parsed = BlockObj(br.read_byte(self.size, self.base))
+            parsed = parsed.separate(self.one_size)
         if self.each_after_parse is not None:
             parsed = list(map(self.each_after_parse, parsed))
         if self.after_parse is not None and self.after_parse_factory is not None:
@@ -156,9 +154,13 @@ class RestBlock[T]:
         return _BlockBase.to_bytes(obj, self.base, size)
 
 
-@dataclass(frozen=True)
+@dataclass
 class BlockObj:
+    byte_length: int = field(init=False)
     __data: bytes
+
+    def __post_init__(self):
+        self.byte_length = len(self.__data)
 
     def to_bytes(self) -> bytes:
         return self.__data
@@ -166,31 +168,21 @@ class BlockObj:
     def to_int(self) -> int:
         return int.from_bytes(self.__data)
 
-    def to_int_enum(self, enum_type: type[enum.IntEnum]) -> enum.IntEnum:
+    def to_str(self) -> str:
+        return self.__data.decode()
+
+    def to_enum(self, enum_type: type[enum.IntEnum]) -> enum.IntEnum:
         for elem in enum_type:
             if elem.value == self.to_int():
                 return elem
         raise ValueError("値がEnumに合致しませんでした")
 
-    def split(self, sep_byte: int) -> list[BlockObj]:
+    def separate(self, sep_byte: int) -> list[BlockObj]:
+        assert self.byte_length % sep_byte == 0
         res = []
-        i = 0
-        while True:
-            raw = self.__data[i:i + sep_byte]
+        for i in range(0, len(self.__data), sep_byte):
+            raw = self.__data[i: i + sep_byte]
             res.append(BlockObj(raw))
-            if raw == b"":
-                return res
-
-
-@dataclass
-class NewBlocks[T]:
-    contexts: list[_ContextBase]
-
-    def parse(self, data: bytes) -> list[BlockObj]:
-        br = BytesReader(data)
-        res = []
-        for ctx in self.contexts:
-            res.append(BlockObj(ctx.read(br)))
         return res
 
 
@@ -238,18 +230,6 @@ class Blocks[T]:
             unparsed = long_to_bytes(len(unparsed), self.variable_header_size) + unparsed
         return unparsed
 
-    def __add__(self, other: _BlockKind):
-        return replace(
-            self,
-            blocks=[*self.blocks, other]
-        )
-
-    def __iadd__(self, other: _BlockKind):
-        return replace(
-            self,
-            blocks=[*self.blocks, other]
-        )
-
 
 @dataclass
 class BlocksLoop[T]:
@@ -295,8 +275,7 @@ class EnumBlock[T: TLSIntEnum]:
             assert self.unit == "byte" and self.variable_header_size is not None
             value = br.read_variable_length(self.variable_header_size, "raw")
         else:
-            bit_size = self.enum.byte_length() if self.unit == "bit" else self.enum.byte_length() * 8
-            value = br.read_bit(bit_size, "raw")
+            value = br.read_byte(self.enum.byte_length(), "raw")
         return self.enum.parse(value)
 
     def from_bytes(self, data: bytes) -> int:
@@ -325,9 +304,8 @@ class EnumListBlock[T: TLSIntEnum]:
             assert self.unit == "byte"
             values = br.read_variable_length_per(self.size, self.one_size, "int")
         else:
-            bit_size = self.size if self.unit == "bit" else self.size * 8
-            one_size = self.one_size if self.unit == "bit" else self.one_size * 8
-            values = br.read_bit_per(bit_size, one_size, "int")
+            values = BlockObj(br.read_byte(self.size, "int"))
+            values = values.separate(self.one_size)
         return list(map(self.enum, values))
 
     def from_bytes(self, data: bytes) -> list[T]:

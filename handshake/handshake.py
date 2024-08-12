@@ -9,7 +9,7 @@ from handshake.client_hello import ClientHello
 from handshake.encrypted_extensions import EncryptedExtensions
 from handshake.certificate import Certificate
 from handshake.tls_handshake import TLSHandshake
-from reader import Blocks, Block, RestBlock
+from reader import Blocks, Block, RestBlock, EnumBlock
 from common import HandshakeType
 
 __all__ = ["Handshake"]
@@ -32,7 +32,7 @@ class Handshake:
     msg: bytes
 
     blocks: ClassVar[Blocks] = Blocks([
-        Block(1, "int", after_parse=HandshakeType),
+        EnumBlock(HandshakeType),
         Block(3, "int"),
         RestBlock("raw"),
     ])

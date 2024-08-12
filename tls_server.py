@@ -5,23 +5,24 @@ import pprint
 from cryptography.hazmat.primitives._serialization import Encoding
 from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
 from cryptography.hazmat.primitives.hashes import SHA256
-
 from alert import Alert
-from extension import ServerName
+from alert.alert import AlertLevel, AlertDescription
+from extension import ServerName, SupportedVersions
 from extension.key_share import KeyShareClientHello, KeyShareServerHello, KeyShareEntry
 from extension.psk_key_exchange_modes import PskKeyExchangeMode
-from extension.extension_parser import extensions_rev
+from extension.extension_parser import extensions_rev, ExtensionHeader
+from extension.supported_versions import SupportedVersionsServerHello
 from handshake import Handshake, CipherSuite, EncryptedExtensions
 from handshake.certificate import Certificate
 from handshake.certificate_verify import CertificateVerify
 from handshake.finished import Finished
-from reader import BytesReader, Blocks, Block, EnumBlock
+from reader import BytesReader, Blocks, Block, EnumBlock, BlockObj
 from record import TLSPlaintext, TLSCiphertext
 from handshake import ClientHello, ServerHello
 from common import ContentType, HandshakeType, ExtensionType, NamedGroup, SignatureScheme
 
 import secrets
-from crypto import TLSKey
+from crypto import TLSKey, HandshakeContext
 from record.tls_inner_plaintext import TLSInnerPlaintext
 
 
@@ -32,7 +33,7 @@ class TLSServer:
         self.__sock.bind((dst, ip))
         self.__conn = None
         self.__key = TLSKey()
-        self.__handshake_ctx = []
+        self.__handshake_ctx = HandshakeContext([])
         self.handshake_finished = False
 
     def __del__(self):
@@ -72,55 +73,41 @@ class TLSServer:
                 match handshake.msg_type:
                     case HandshakeType.client_hello:
                         print(": ClientHello")
-                        ch: ClientHello = ClientHello.blocks.from_bytes(handshake.msg)
-                        self.__handshake_ctx.append(ch)
+                        # ch: ClientHello = ClientHello.blocks.from_bytes(handshake.msg)
+                        ch: ClientHello = ClientHello.from_bytes(handshake.msg)
                         pprint.pprint(ch)
-                        server_hello = self.make_server_hello(ch)
-                        self.__handshake_ctx.append(server_hello)
-                        handshake = Handshake.make(server_hello)
+                        self.__handshake_ctx.append(ch)
+
+                        sh = self.make_server_hello(ch)
+                        self.__handshake_ctx.append(sh)
+                        handshake = Handshake.make(sh)
                         new_tls_plaintext = TLSPlaintext.make(handshake)
-                        pprint.pprint(server_hello)
                         self.send(TLSPlaintext.blocks.unparse(new_tls_plaintext))
+
                         # make encrypted_extensions
-                        self.__key.derive_secrets(None, ch, server_hello)
+                        self.__key.derive_secrets(None, ch, sh)
                         ee = self.make_encrypted_extensions()
-                        self.__handshake_ctx.append(ee)
-                        new_handshake = Handshake.make(ee)
-                        tls_inner_plaintext = TLSInnerPlaintext(
-                            Handshake.blocks.unparse(new_handshake), ContentType.handshake, b""
-                        )
-                        # Refer: RFC8446 §5.2 "length: The length ..."
-                        # Refer: https://tex2e.github.io/rfc-translater/html/rfc5116.html#2-1--Authenticated-Encryption
-                        tls_ciphertext_len = len(tls_inner_plaintext.unparse()) + 16
-                        encrypted_tls_inner_plaintext, tag = self.__key.encrypt_handshake(tls_inner_plaintext.unparse(),
-                                                                                          ContentType.application_data,
-                                                                                          0x0303,
-                                                                                          tls_ciphertext_len)
-                        encrypted_tls_inner_plaintext += tag
-                        print(tls_ciphertext_len, encrypted_tls_inner_plaintext, len(encrypted_tls_inner_plaintext))
-                        tls_ciphertext = TLSCiphertext(
-                            ContentType.application_data, 0x0303, len(encrypted_tls_inner_plaintext),
-                            encrypted_tls_inner_plaintext
-                        )
-                        self.send(TLSCiphertext.blocks.unparse(tls_ciphertext))
+                        self.send(TLSCiphertext.blocks.unparse(ee))
 
                         # make certificate
-                        certificate, real_cert = self.make_certificate()
-                        self.__handshake_ctx.append(real_cert)
+                        certificate = self.make_certificate()
                         self.send(TLSCiphertext.blocks.unparse(certificate))
 
                         # make certificate_verify
-                        cv, real_cv = self.make_certificate_verify(ch, server_hello, ee, real_cert)
-                        self.__handshake_ctx.append(real_cv)
+                        cv = self.make_certificate_verify()
                         self.send(TLSCiphertext.blocks.unparse(cv))
 
                         # make finished
-                        finished, real_finished = self.make_finished(*self.__handshake_ctx)
-                        self.__handshake_ctx.append(real_finished)
+                        finished = self.make_finished()
                         self.send(TLSCiphertext.blocks.unparse(finished))
             case ContentType.alert:
                 print(": Alert")
-                pprint.pprint(Alert.blocks.from_bytes(read_data))
+                alert = Alert.from_bytes(read_data)
+                print(alert)
+                if alert.description == AlertDescription.close_notify:
+                    print(": Close Notify")
+                    # TODO: send close notify
+                    exit(0)
                 print("Exit.")
                 exit(1)
             case ContentType.change_cipher_spec:
@@ -134,9 +121,9 @@ class TLSServer:
                 print(tls_inner_plaintext)
                 handshake = Handshake.blocks.from_bytes(tls_inner_plaintext.content)
                 print(handshake)
-                self.check_client_finished(handshake.msg, *self.__handshake_ctx)
+                self.check_client_finished(handshake.msg)
                 self.handshake_finished = True
-                self.__key.make_application_key(self.__handshake_ctx, Finished(handshake.msg))
+                self.__key.make_application_key(self.__handshake_ctx.handshakes, Finished(handshake.msg))
             case _:
                 raise ValueError
 
@@ -147,8 +134,13 @@ class TLSServer:
         decrypted = self.__key.decrypt_application_data(data, ContentType.application_data,
                                                         0x0303, len(data))
         tls_inner_plaintext = TLSInnerPlaintext.from_bytes(decrypted)
+        match tls_inner_plaintext.type:
+            case ContentType.application_data:
+                print(f"受信: {tls_inner_plaintext.content}")
+            case ContentType.alert:
+                print(Alert.from_bytes(tls_inner_plaintext.content))
+                exit(0)
         self.__key.seq_upd_client()
-        print(f"受信: {tls_inner_plaintext.content}")
 
     def make_server_hello(self, client_hello: ClientHello) -> ServerHello:
         legacy_version = 0x0303
@@ -172,27 +164,48 @@ class TLSServer:
                         raise ValueError
                 except:
                     match ext_type:
+                        case ExtensionType.supported_versions:
+                            assert 0x0304 in client_extension.version
+                            extensions.append(
+                                ExtensionHeader(
+                                    ExtensionType.supported_versions,
+                                    SupportedVersionsServerHello(0x0304).unparse()
+                                )
+                            )
                         case ExtensionType.psk_key_exchange_modes:
                             if client_extension.ke_modes == PskKeyExchangeMode.psk_ke:
                                 raise NotImplementedError("Can't process psk_ke.")
                             elif client_extension.ke_modes == PskKeyExchangeMode.psk_dhe_ke:
-                                print("PskKeyExchangeMode: psk_dhe_ke")
+                                pass
                         case ExtensionType.signature_algorithms:
                             for e in client_hello.extensions:
                                 if isinstance(e, KeyShareClientHello):
                                     self.__key.exchange_key_x25519(e.client_shares[0])
                                     extensions.append(
-                                        KeyShareServerHello(
-                                            server_share=KeyShareEntry(
-                                                group=NamedGroup.x25519,
-                                                key_exchange=self.__key.server_x25519_public_key.public_bytes_raw()
-                                            )
+                                        ExtensionHeader(
+                                            ExtensionType.key_share,
+                                            KeyShareServerHello(
+                                                server_share=KeyShareEntry(
+                                                    group=NamedGroup.x25519,
+                                                    key_exchange=self.__key.server_x25519_public_key.public_bytes_raw()
+                                                )
+                                            ).unparse()
                                         )
                                     )
                         case _:
                             continue
             else:
                 raise ValueError(f"Extensionを処理できません。 名前：{client_extension.__class__.__name__}")
+        print(ServerHello(
+            legacy_version, random,
+            legacy_session_id_echo, cipher_suite,
+            legacy_compression_method, extensions
+        ))
+        print(ServerHello(
+            legacy_version, random,
+            legacy_session_id_echo, cipher_suite,
+            legacy_compression_method, extensions
+        ).unparse().hex())
         return ServerHello(
             legacy_version, random,
             legacy_session_id_echo, cipher_suite,
@@ -201,23 +214,29 @@ class TLSServer:
 
     def make_encrypted_extensions(self):
         sn = ServerName(name="www.yohaku7.jp")
-        return EncryptedExtensions([])
+        ee = EncryptedExtensions([])
+        return self.encrypt_handshake(ee)
 
-    def check_client_finished(self, verify_data: bytes, ch, sh, ee, cert, cv, s_finished):
+    def check_client_finished(self, verify_data: bytes):
         assert len(verify_data) == 32
         finished_key = TLSKey.HKDF_Expand_Label(self.__key.client_handshake_traffic_secret,
                                                 b"finished", b"", 32)
-        actual_verify_data = TLSKey.HMAC(finished_key,
-                                         TLSKey.Transcript_Hash(ch, sh, ee, cert, cv, s_finished))
+        actual_verify_data = TLSKey.HMAC(finished_key, self.__handshake_ctx.transcript_hash)
         assert actual_verify_data == verify_data
 
-    def make_finished(self, ch, sh, ee, cert, cv):
+    def make_finished(self):
         self.__key.seq_upd_server()
         finished_key = TLSKey.HKDF_Expand_Label(self.__key.server_handshake_traffic_secret,
                                                 b"finished", b"", 32)
-        verify_data = TLSKey.HMAC(finished_key, TLSKey.Transcript_Hash(ch, sh, ee, cert, cv))
+        verify_data = TLSKey.HMAC(finished_key, self.__handshake_ctx.transcript_hash)
         finished = Finished(verify_data)
-        handshake = Handshake.make(finished)
+        return self.encrypt_handshake(finished)
+
+    def encrypt_handshake(self, obj) -> TLSCiphertext:
+        # Refer: RFC8446 §5.2 "length: The length ..."
+        # Refer: https://tex2e.github.io/rfc-translater/html/rfc5116.html#2-1--Authenticated-Encryption
+        self.__handshake_ctx.append(obj)
+        handshake = Handshake.make(obj)
         tls_inner_plaintext = TLSInnerPlaintext(handshake.blocks.unparse(handshake), ContentType.handshake, b"")
         tls_ciphertext_len = len(tls_inner_plaintext.unparse()) + 16
         encrypted_tls_inner_plaintext, tag = self.__key.encrypt_handshake(tls_inner_plaintext.unparse(),
@@ -229,31 +248,19 @@ class TLSServer:
             ContentType.application_data, 0x0303, len(encrypted_tls_inner_plaintext),
             encrypted_tls_inner_plaintext
         )
-        return tls_ciphertext, finished
+        return tls_ciphertext
 
-    def make_certificate(self) -> (TLSCiphertext, Certificate):
+    def make_certificate(self) -> TLSCiphertext:
+        self.__key.seq_upd_server()
         cert = TLSKey.load_x509_cert("temp/cert.pem")
         cert = cert.public_bytes(Encoding.DER)
         certificate = Certificate.make(cert, [])
-        self.__key.seq_upd_server()
-        handshake = Handshake.make(certificate)
-        tls_inner_plaintext = TLSInnerPlaintext(handshake.blocks.unparse(handshake), ContentType.handshake, b"")
-        tls_ciphertext_len = len(tls_inner_plaintext.unparse()) + 16
-        encrypted_tls_inner_plaintext, tag = self.__key.encrypt_handshake(tls_inner_plaintext.unparse(),
-                                                                          ContentType.application_data,
-                                                                          0x0303,
-                                                                          tls_ciphertext_len)
-        encrypted_tls_inner_plaintext += tag
-        tls_ciphertext = TLSCiphertext(
-            ContentType.application_data, 0x0303, len(encrypted_tls_inner_plaintext),
-            encrypted_tls_inner_plaintext
-        )
-        return tls_ciphertext, certificate
+        return self.encrypt_handshake(certificate)
 
-    def make_certificate_verify(self, ch, sh, ee, cert) -> (TLSCiphertext, CertificateVerify):
+    def make_certificate_verify(self) -> TLSCiphertext:
         self.__key.seq_upd_server()
         algorithm = SignatureScheme.ecdsa_secp256r1_sha256
-        signature_content = TLSKey.Transcript_Hash(ch, sh, ee, cert)
+        signature_content = self.__handshake_ctx.transcript_hash
         signature_content = (  # refer: TLS8446 §4.4.3
             b"\x20" * 64 +
             b"TLS 1.3, server CertificateVerify" +
@@ -263,19 +270,7 @@ class TLSServer:
         private_key = TLSKey.load_x509_key("temp/key.pem")
         signature = private_key.sign(signature_content, ECDSA(SHA256()))
         cv = CertificateVerify(algorithm, signature)
-        handshake = Handshake.make(cv)
-        tls_inner_plaintext = TLSInnerPlaintext(handshake.blocks.unparse(handshake), ContentType.handshake, b"")
-        tls_ciphertext_len = len(tls_inner_plaintext.unparse()) + 16
-        encrypted_tls_inner_plaintext, tag = self.__key.encrypt_handshake(tls_inner_plaintext.unparse(),
-                                                                          ContentType.application_data,
-                                                                          0x0303,
-                                                                          tls_ciphertext_len)
-        encrypted_tls_inner_plaintext += tag
-        tls_ciphertext = TLSCiphertext(
-            ContentType.application_data, 0x0303, len(encrypted_tls_inner_plaintext),
-            encrypted_tls_inner_plaintext
-        )
-        return tls_ciphertext, cv
+        return self.encrypt_handshake(cv)
 
 
 def main():
@@ -302,4 +297,10 @@ def main():
 
 
 if __name__ == '__main__':
+    # pprint.pprint(
+    #     ServerHello.from_bytes(
+    #         bytes.fromhex("0303c8e7b3fc8659b741ddcb2e9416e09189fc28ce39269982629118bbed57581ed720b7ae0751e3141cf3a4adcab503ba50fc6322d6812f982e668d839843a67a4e04130100002e00330024001d0020fc8303ed4e9128a0246dc78265fdd480405d4b79e5d2162247bd8bda42cd894f002b00020304")
+    #     )
+    # )
+    # pprint.pprint(KeyShareServerHello.from_bytes(""))
     main()

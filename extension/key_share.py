@@ -1,9 +1,8 @@
 from dataclasses import dataclass
-from typing import ClassVar
 
 from common import NamedGroup, HandshakeType
-from reader import Block, Blocks, BlocksLoop, from_bytes
-from .extension_data import ExtensionData
+from reader import Block, Blocks, new, BytesReader
+from reader.new import BytesConverter, BytesConvertable
 
 __all__ = [
     "KeyShare", "KeyShareServerHello", "KeyShareHelloRetryRequest", "KeyShareClientHello",
@@ -12,72 +11,63 @@ __all__ = [
 
 
 @dataclass(frozen=True)
-class KeyShareEntry:
+class KeyShareEntry(new.TLSObject):
     group: NamedGroup
     key_exchange: bytes
-    blocks: ClassVar[Blocks] = Blocks([
-        Block(2, "int", after_parse=NamedGroup),
-        Block(2, "raw", variable=True)
-    ])
 
-
-KeyShareEntry.blocks.after_parse_factory = KeyShareEntry
+    @classmethod
+    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+        return [
+            new.Block(2),
+            new.Block(new.Length(2, variable=True))
+        ]
 
 
 @dataclass(frozen=True)
-class KeyShareClientHello(ExtensionData):
+class KeyShareClientHello(new.TLSObject):
     client_shares: list[KeyShareEntry]
-    blocks = Blocks([
-        BlocksLoop(KeyShareEntry.blocks)
-    ], variable=True, variable_header_size=2)
 
-
-KeyShareClientHello.blocks.after_parse_factory = KeyShareClientHello
+    @classmethod
+    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+        return [
+            new.Block(new.Length(2, variable=True)),
+        ]
 
 
 @dataclass(frozen=True)
-class KeyShareHelloRetryRequest(ExtensionData):
+class KeyShareHelloRetryRequest(new.TLSObject):
     selected_group: NamedGroup
-    blocks = Blocks([
-        Block(2, "int", after_parse=NamedGroup)
-    ])
 
-
-KeyShareHelloRetryRequest.blocks.after_parse_factory = KeyShareHelloRetryRequest
+    @classmethod
+    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+        return [
+            new.Block(2)
+        ]
 
 
 @dataclass(frozen=True)
-class KeyShareServerHello(ExtensionData):
+class KeyShareServerHello(new.TLSObject):
     server_share: KeyShareEntry
-    blocks = Blocks([
-        KeyShareEntry.blocks
-    ])
 
-
-KeyShareServerHello.blocks.after_parse_factory = KeyShareServerHello
+    @classmethod
+    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+        return [
+            KeyShareEntry,
+        ]
 
 
 class KeyShare:
-    @staticmethod
-    def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        return from_bytes(
-            handshake_type,
-            {
-                HandshakeType.client_hello: KeyShareClientHello.blocks,
-                HandshakeType.server_hello: KeyShareServerHello.blocks
-            },
-            byte_seq
-        )
+    @classmethod
+    def parse(cls, br: BytesReader, **additional_data):
+        h_type = additional_data["handshake_type"]
+        if h_type == HandshakeType.client_hello:
+            return KeyShareClientHello.parse(br)
+        elif h_type == HandshakeType.server_hello:
+            return KeyShareServerHello.parse(br)
 
-
-if __name__ == '__main__':
-    x = KeyShareClientHello(client_shares=[KeyShareEntry(group=NamedGroup.x25519,
-    key_exchange = b'+Y\x1d\x9f'
-                   b'\xb8O\x7f\xab'
-                   b'\x82\x80\x19\x05'
-                   b'\xa2\xed+f'
-                   b"?'(\xf8"
-                   b'\xcf\xb5\xee\xc8'
-                   b'\xf4\xbf\x16p'
-                   b'\xd8\x1e\xb3=')])
-    print(x.blocks.unparse(x))
+    @classmethod
+    def from_bytes(cls, data: bytes, **additional_data):
+        br = BytesReader(data)
+        res = cls.parse(br, **additional_data)
+        assert br.rest_length == 0
+        return res

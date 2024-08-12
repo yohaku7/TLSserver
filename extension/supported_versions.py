@@ -1,36 +1,53 @@
 from dataclasses import dataclass
 
-from reader import Block, ListBlock
+from reader import new, BytesReader
 from common import HandshakeType
-from .extension_data import ExtensionData, ExtensionReply
+from reader.new import BytesConverter, BytesConvertable
+from .extension_data import ExtensionReply
 
 
 @dataclass(frozen=True)
-class SupportedVersions(ExtensionData):
+class SupportedVersionsClientHello(new.TLSObject):
     version: list[int]
 
-    @staticmethod
-    def parse(byte_seq: bytes, handshake_type: HandshakeType):
-        version: list[int]
-        match handshake_type:
-            case HandshakeType.client_hello:
-                version = ListBlock(1, 2, "byte", "int", variable=True).from_bytes(byte_seq)
-            case HandshakeType.server_hello:  # and HelloRetryRequest
-                version = [Block(2, "int").from_bytes(byte_seq)]
-            case _:
-                raise ValueError("supported_versionsはこのハンドシェイクタイプには送信しないでください")
-        return SupportedVersions(version)
+    @classmethod
+    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+        return [
+            new.Block(new.Variable(1), split=2)
+        ]
 
-    def unparse(self, handshake_type: HandshakeType):
-        if handshake_type == HandshakeType.client_hello:
-            return ListBlock(1, 2, "byte", "int", variable=True).unparse(self.version)
-        elif handshake_type == HandshakeType.server_hello:
-            assert len(self.version) == 1
-            return Block(2, "int").unparse(self.version[0])
+
+@dataclass(frozen=True)
+class SupportedVersionsServerHello(new.TLSObject):
+    version: int
+
+    @classmethod
+    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+        return [
+            new.Block(2)
+        ]
+
+
+@dataclass(frozen=True)
+class SupportedVersions:
+    @classmethod
+    def parse(cls, br: BytesReader, **additional_data):
+        h_type = additional_data["handshake_type"]
+        if h_type == HandshakeType.client_hello:
+            return SupportedVersionsClientHello.parse(br)
+        elif h_type == HandshakeType.server_hello:
+            return SupportedVersionsServerHello.parse(br)
         else:
-            raise ValueError("supported_versionsをunparseできないhandshake_typeです")
+            raise ValueError("supported_versionsはこのハンドシェイクタイプには送信しないでください")
+
+    @classmethod
+    def from_bytes(cls, data: bytes, **additional_data):
+        br = BytesReader(data)
+        res = cls.parse(br, **additional_data)
+        assert br.rest_length == 0
+        return res
 
     def reply(self) -> ExtensionReply:
         assert 0x0304 in self.version  # TLS 1.3
         return ExtensionReply("Supported Version: 0x0304 (TLS 1.3)",
-                              SupportedVersions([0x0304]))
+                              SupportedVersionsServerHello(0x0304))

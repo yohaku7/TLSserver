@@ -1,9 +1,11 @@
 from dataclasses import dataclass
+
+from reader.new import BytesConverter, BytesConvertable
 from tls_object import TLSIntEnum
 from enum import IntEnum
 
-from reader import Blocks, EnumListBlock
-from .extension_data import ExtensionData, ExtensionReply
+from reader import new
+from .extension_data import ExtensionReply
 
 __all__ = ["ECPointFormats"]
 
@@ -22,15 +24,15 @@ class ECPointFormat(TLSIntEnum, IntEnum):
 
 
 @dataclass(frozen=True)
-class ECPointFormats(ExtensionData):
+class ECPointFormats(new.TLSObject):
     ec_point_formats: list[ECPointFormat]
-    blocks = Blocks([
-        EnumListBlock(1, 1, ECPointFormat, variable=True)
-    ])
+
+    @classmethod
+    def _get_lengths(cls) -> list[int | tuple | None]:
+        return [
+            (1, True, 1),
+        ]
 
     def reply(self) -> ExtensionReply:
         assert ECPointFormat.uncompressed in self.ec_point_formats
         return ExtensionReply(f"ECPointFormat: {ECPointFormat.uncompressed}")
-
-
-ECPointFormats.blocks.after_parse_factory = ECPointFormats

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import ClassVar, Any
 from common import HandshakeType
 from reader import Blocks
@@ -22,6 +22,3 @@ class ExtensionData(ABC):
 
     def unparse(self, handshake_type: HandshakeType) -> bytes:
         raise NotImplementedError("HandshakeTypeによって処理は変化しないので、unparseは呼び出されるべきではありません。")
-
-    def reply(self) -> ExtensionReply:
-        raise NotImplementedError

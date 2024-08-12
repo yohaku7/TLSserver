@@ -1,8 +1,8 @@
-from tls_object import TLSIntEnum
+# from tls_object import TLSIntEnum
 from enum import IntEnum
 
 
-class ExtensionType(TLSIntEnum, IntEnum):
+class ExtensionType(IntEnum):
     server_name = 0
     max_fragment_length = 1
     status_request = 5
@@ -33,6 +33,6 @@ class ExtensionType(TLSIntEnum, IntEnum):
 
     renegotiation_info = 0xff01  # RFC5746
 
-    @classmethod
-    def byte_length(cls) -> int:
-        return 2
+    # @classmethod
+    # def byte_length(cls) -> int:
+    #     return 2
