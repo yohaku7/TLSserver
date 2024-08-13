@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from reader import new
-from reader.new import BytesConverter, BytesConvertable
 
 __all__ = ["RecordSizeLimit"]
 
@@ -10,7 +9,7 @@ class RecordSizeLimit(new.TLSObject):
     limit: int
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(2)
+            2
         ]

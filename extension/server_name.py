@@ -2,12 +2,11 @@
 from reader import Blocks, Block
 from dataclasses import dataclass, field
 from common import HandshakeType
-from .extension_data import ExtensionData
 
 
 # TODO; 複数のホスト名にも対応する。
 @dataclass(frozen=True)
-class ServerName(ExtensionData):
+class ServerName:
     name: str
     name_type: int = field(default=0)
     # 拡張子フィールド（byte_seq引数）には、RFC6066のServerNameListが入っていて、2byteヘッダの可変長

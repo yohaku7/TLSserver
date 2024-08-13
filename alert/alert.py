@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from enum import IntEnum
-from reader.new import BytesConverter, BytesConvertable
 from tls_object import TLSIntEnum
 from reader import new
 
@@ -57,8 +56,8 @@ class Alert(new.TLSObject):
     description: AlertDescription
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(1),
-            new.Block(1)
+            1,
+            1
         ]

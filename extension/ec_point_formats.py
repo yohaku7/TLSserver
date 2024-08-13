@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-from reader.new import BytesConverter, BytesConvertable
 from tls_object import TLSIntEnum
 from enum import IntEnum
 

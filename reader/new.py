@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import abc
-import dataclasses
 import types
 import typing
 from dataclasses import dataclass
-from enum import IntEnum
+from enum import IntEnum, Enum
 from Crypto.Util.number import long_to_bytes
 from reader import BytesReader
 
 __all__ = [
     "BytesConvertable", "BytesConverter",
-    "Variable", "Block", "TLSObject"
+    "Variable", "TLSObject"
 ]
 
 _PRIMITIVE_TYPES = (
@@ -48,7 +47,6 @@ def _split_bytes(raw: bytes, split: int):
     return res
 
 
-
 class Parsable(metaclass=abc.ABCMeta):
     @classmethod
     @abc.abstractmethod
@@ -81,31 +79,31 @@ class Variable:
     header_byte_length: int
 
 
-@dataclass(frozen=True)
-class Block(BytesConverter):
-    byte_length: int | Length
-    additional_data: dict = dataclasses.field(default_factory=dict, kw_only=True)
-    split: int | None = dataclasses.field(default=None, kw_only=True)
-
-    def parse(self, br: BytesReader):
-        byte_length = _read_length(self.byte_length, br)
-        raw = br.read_byte(byte_length, "raw")
-        if self.split is None:
-            return raw
-        assert len(raw) % self.split == 0
-        res = []
-        for i in range(0, len(raw), self.split):
-            res.append(raw[i:i + self.split])
-        return res
-
-    def unparse(self, obj) -> bytes:
-        if isinstance(obj, list):
-            res = b""
-            for o in obj:
-                res += _to_bytes(o, self.split)
-        else:
-            res = _to_bytes(obj, self.byte_length)
-        return _add_length_header(self.byte_length, res) if type(self.byte_length) is Variable else res
+# @dataclass(frozen=True)
+# class Block(BytesConverter):
+#     byte_length: int | Length
+#     additional_data: dict = dataclasses.field(default_factory=dict, kw_only=True)
+#     split: int | None = dataclasses.field(default=None, kw_only=True)
+#
+#     def parse(self, br: BytesReader):
+#         byte_length = _read_length(self.byte_length, br)
+#         raw = br.read_byte(byte_length, "raw")
+#         if self.split is None:
+#             return raw
+#         assert len(raw) % self.split == 0
+#         res = []
+#         for i in range(0, len(raw), self.split):
+#             res.append(raw[i:i + self.split])
+#         return res
+#
+#     def unparse(self, obj) -> bytes:
+#         if isinstance(obj, list):
+#             res = b""
+#             for o in obj:
+#                 res += _to_bytes(o, self.split)
+#         else:
+#             res = _to_bytes(obj, self.byte_length)
+#         return _add_length_header(self.byte_length, res) if type(self.byte_length) is Variable else res
 
 
 # @dataclass(frozen=True)
@@ -165,50 +163,59 @@ def _parse_primitive[T](data: bytes, primitive_type: T) -> T | None:
     raise ValueError(f"パースできません。 type: {primitive_type}")
 
 
-def _to_bytes(obj, byte_length: int | Variable) -> bytes:
-    obj_type = type(obj)
-    if obj_type is int:
-        if type(byte_length) is Variable:
-            res = long_to_bytes(obj)
-        else:
-            res = int.to_bytes(obj, byte_length)
-    elif obj_type is str:
-        res = obj.encode()
-    elif obj_type is bytes:
-        res = obj
-    elif obj_type is bytearray:
-        res = bytes(obj)
-    elif issubclass(obj_type, IntEnum):
-        if type(byte_length) is Variable:
-            res = long_to_bytes(obj.value)
-        else:
-            res = int.to_bytes(obj.value, byte_length)
-    elif issubclass(obj_type, TLSObject):
-        res = obj.unparse()
-    else:
-        raise ValueError(f"{obj_type}, obj: {obj}")
-    return res
-
-
 def _get_types(__type: types.GenericAlias) -> (type, type):
     t_args: tuple[type, ...] = __type.__args__
     assert len(t_args) == 1, ValueError("型パラメータの数は1でなければなりません")
     return __type.__origin__, t_args[0]
 
 
-def _add_length_header(variable: Variable, data: bytes) -> bytes:
-    return len(data).to_bytes(variable.header_byte_length) + data
+def _add_length_header(variable: int, data: bytes) -> bytes:
+    return len(data).to_bytes(variable) + data
 
 
-def _parse(data, __type, block):
-    if isinstance(__type, type):  # primitive type or BytesConvertable
-        if isinstance(__type, TLSObject):
-            return __type.from_bytes(data)
-        return _parse_primitive(data, __type)
-    if isinstance(__type, types.GenericAlias):  # GenericAlias (e.g. list[int])
-        t_origin, t_param = _get_types(__type)
-        return list(map(lambda x: _parse(x, t_param, block), data))
-    return _parse_primitive(data, __type)
+def _to_bytes(obj, byte_length: int, variable: bool) -> bytes:
+    assert byte_length is not None
+    obj_type = type(obj)
+    if type(obj) in _PRIMITIVE_TYPES:
+        return _primitive_to_bytes(obj, byte_length, variable)
+    elif issubclass(obj_type, IntEnum):
+        byte_length = byte_length if not variable else 0
+        return long_to_bytes(obj.value, byte_length)
+    elif isinstance(obj, TLSObject):
+        return obj.unparse()
+    # if obj_type is int:
+    #     byte_length = byte_length if not variable else 0
+    #     res = long_to_bytes(obj, byte_length)
+    # elif obj_type is str:
+    #     res = obj.encode()
+    # elif obj_type is bytes:
+    #     res = obj
+    # elif obj_type is bytearray:
+    #     res = bytes(obj)
+    # elif issubclass(obj_type, IntEnum):
+    #     byte_length = byte_length if not variable else 0
+    #     res = int.to_bytes(obj.value, byte_length)
+    # elif isinstance(obj, TLSObject):
+    #     res = obj.unparse()
+    # else:
+    #     raise ValueError(f"{obj_type}, obj: {obj}")
+    # return res
+
+
+def _primitive_to_bytes(obj, length: int, variable: bool):
+    if isinstance(obj, int):
+        length = 0 if variable else length
+        return long_to_bytes(obj, length)
+    elif isinstance(obj, str):
+        return obj.encode()
+    elif isinstance(obj, bytes):
+        return obj
+    elif isinstance(obj, bytearray):
+        return bytes(obj)
+    elif isinstance(obj, Enum):
+        length = 0 if variable else length
+        return long_to_bytes(obj.value, length)
+    raise ValueError("couldn't parse")
 
 
 @dataclass(frozen=True)
@@ -234,7 +241,9 @@ class TLSObject(BytesConvertable):
                 raw = br.read_byte(length, "raw")
             raw = raw if split is None else _split_bytes(raw, split)
 
-            if type_annotation in _PRIMITIVE_TYPES or issubclass(type(type_annotation), IntEnum):
+            if issubclass(type_annotation, Enum):
+                return type_annotation(int.from_bytes(raw))
+            if type_annotation in _PRIMITIVE_TYPES:
                 return _parse_primitive(raw, type_annotation)
             elif isinstance(type_annotation, types.GenericAlias) and type(raw) is bytes:
                 t_origin, t_param = _get_types(type_annotation)
@@ -261,13 +270,12 @@ class TLSObject(BytesConvertable):
         fields = {}
         for f_name, f_type, length in zip(type_hints.keys(), type_hints.values(),
                                          lengths, strict=True):
-            print(f"{f_name}を読んでいるよ！")
             if length is None:
                 assert issubclass(f_type, TLSObject)
                 fields[f_name] = f_type.parse(br, **additional_data)
             elif isinstance(length, int):
-                print(length)
-                fields[f_name] = __parse(length, False, None, f_type)
+                fields[f_name] = __parse(length, False, None, f_type) if length >= 0 else (
+                    __parse(br.rest_length, False, None, f_type))
             elif isinstance(length, tuple):
                 if len(length) == 1:
                     length = length[0]
@@ -287,55 +295,59 @@ class TLSObject(BytesConvertable):
                 raise TypeError(f"name: {f_name}, type: {f_type}")
         return cls(**fields)._after_parse(**additional_data)
 
-
-        # for f_name, f_type, block in zip(type_hints.keys(), type_hints.values(),
-        #                                  lengths, strict=True):
-        #     if issubclass(block.__class__, TLSObject):
-        #         fields[f_name] = block.parse(br)
-        #         continue
-        #
-        #     if issubclass(block.__class__, TLSObject):
-        #         fields[f_name] = block.parse(br)
-        #     elif isinstance(block, Length):
-        #
-        #     elif f_type in _PRIMITIVE_TYPES:
-        #         fields[f_name] = _parse_primitive(block.parse(br), f_type)
-        #     elif issubclass(f_type.__class__, TLSObject):
-        #         fields[f_name] = f_type.parse(br, **block.additional_data)
-        #     elif issubclass(f_type, IntEnum):
-        #         fields[f_name] = f_type(int.from_bytes(block.parse(br)))
-        #     elif isinstance(f_type, types.GenericAlias):
-        #         t_origin, t_param = _get_types(f_type)
-        #         if t_origin not in _COLLECTIONS:
-        #             raise TypeError(f"コレクション '{t_origin}' はパースできません")
-        #         raw_list = block.parse(br)
-        #         if t_param in _PRIMITIVE_TYPES:
-        #             fields[f_name] = t_origin(map(lambda x: _parse_primitive(x, t_param), raw_list))
-        #         elif issubclass(t_param, TLSObject):
-        #             list_br = BytesReader(raw_list)
-        #             res = []
-        #             while list_br.rest_length != 0:
-        #                 res.append(t_param.parse(list_br, **block.additional_data))
-        #             fields[f_name] = res
-        #         elif issubclass(t_param, IntEnum):
-        #             fields[f_name] = t_origin(map(lambda x: t_param(int.from_bytes(x)), raw_list))
-        #         else:
-        #             raise TypeError(f"型 {t_param} はパースできません")
-        # return cls(**fields)._after_parse(**additional_data)
-
     def _after_parse(self, **additional_data):
         return self
 
     @typing.final
     def unparse(self) -> bytes:
-        blocks: list[Parsable] = self._get_lengths()
+        lengths: list[int | tuple | None] = self._get_lengths()
         values = list(self.__dict__.values())
-        assert len(blocks) == len(values)
+        assert len(lengths) == len(values)
         unparsed = b""
-        for value, block in zip(values, blocks, strict=True):
-            if isinstance(block, TLSObject):
-                unparsed += block.unparse()
+
+        def __unparse(val, __len: int | None, var: bool, spl: int | None):
+            if not __len:
+                assert isinstance(val, TLSObject)
+                return val.unparse()
+            if spl:
+                assert type(val) is list
+                val = b''.join(map(lambda x: _to_bytes(x, spl, var), val))
             else:
-                unparsed += block.unparse(value)
+                if isinstance(val, list):
+                    if len(val) == 0:
+                        val = b""
+                    else:
+                        assert isinstance(val[0], TLSObject)
+                        val = b''.join(map(lambda x: x.unparse(), val))
+                else:
+                    val = _to_bytes(val, __len, var)
+            if var:
+                val = _add_length_header(__len, val)
+            return val
+
+        for value, length in zip(values, lengths, strict=True):
+            if isinstance(length, int | None):
+                unparsed += __unparse(value, length, False, None)
+            elif isinstance(length, tuple):
+                if len(length) == 1:
+                    length = length[0]
+                    unparsed += __unparse(value, length, False, None)
+                elif len(length) == 2:
+                    length, variable = length[0], length[1]
+                    unparsed += __unparse(value, length, variable, None)
+                elif len(length) == 3:
+                    length, variable, split = length[0], length[1], length[2]
+                    unparsed += __unparse(value, length, variable, split)
+                elif len(length) == 4:
+                    length, variable, split, _ = length[0], length[1], length[2], length[3]
+                    unparsed += __unparse(value, length, variable, split)
+                else:
+                    raise ValueError("タプルの長さは4以下でなければなりません。")
+            # else:
+            #     raise TypeError(f"name: {f_name}, type: {f_type}")
+            # if isinstance(block, TLSObject):
+            #     unparsed += block.unparse()
+            # else:
+            #     unparsed += block.unparse(value)
         # unparsed = b''.join([block.unparse(field) for block, field in zip(self._get_blocks(), values, strict=True)])
         return unparsed

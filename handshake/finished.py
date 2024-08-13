@@ -1,9 +1,6 @@
-from typing import ClassVar
 from dataclasses import dataclass
 
-from reader import Blocks, Block
-from .tls_handshake import TLSHandshake
-
+from reader import new
 
 """
    +-----------+-------------------------+-----------------------------+
@@ -25,12 +22,11 @@ from .tls_handshake import TLSHandshake
 
 
 @dataclass(frozen=True)
-class Finished(TLSHandshake):
+class Finished(new.TLSObject):
     verify_data: bytes
 
-    blocks: ClassVar[Blocks] = Blocks([
-        Block(32, "raw")
-    ])
-
-    def unparse(self):
-        return Finished.blocks.unparse(self)
+    @classmethod
+    def _get_lengths(cls) -> list[int | tuple | None]:
+        return [
+            32
+        ]

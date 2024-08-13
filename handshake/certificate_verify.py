@@ -1,19 +1,16 @@
-from typing import ClassVar
 from dataclasses import dataclass
 from common import SignatureScheme
-from reader import Blocks, Block, EnumBlock
-from .tls_handshake import TLSHandshake
+from reader import new
 
 
 @dataclass(frozen=True)
-class CertificateVerify(TLSHandshake):
+class CertificateVerify(new.TLSObject):
     algorithm: SignatureScheme
     signature: bytes
 
-    blocks: ClassVar[Blocks] = Blocks([
-        EnumBlock(SignatureScheme),
-        Block(2, "raw", variable=True)
-    ])
-
-    def unparse(self):
-        return CertificateVerify.blocks.unparse(self)
+    @classmethod
+    def _get_lengths(cls) -> list[int | tuple | None]:
+        return [
+            1,
+            (2, True)
+        ]

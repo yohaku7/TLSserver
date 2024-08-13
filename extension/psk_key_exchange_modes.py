@@ -1,6 +1,5 @@
-from reader.new import BytesConverter, BytesConvertable
 from tls_object import TLSIntEnum
-from reader import Blocks, EnumBlock, new
+from reader import new
 from dataclasses import dataclass
 from enum import IntEnum
 
@@ -22,9 +21,9 @@ class PskKeyExchangeModes(new.TLSObject):
     ke_modes: PskKeyExchangeMode
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(new.Variable(1))
+            (1, True)
         ]
 
     def reply(self):

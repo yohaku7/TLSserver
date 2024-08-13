@@ -1,13 +1,13 @@
 from dataclasses import dataclass
-from handshake.tls_handshake import TLSHandshake
+from reader import new
 from .tls_key import TLSKey
 
 
 @dataclass
 class HandshakeContext:
-    __handshakes: list[TLSHandshake]
+    __handshakes: list[new.TLSObject]
 
-    def append(self, handshake: TLSHandshake):
+    def append(self, handshake: new.TLSObject):
         self.__handshakes.append(handshake)
 
     @property

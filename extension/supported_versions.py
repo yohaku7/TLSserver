@@ -2,7 +2,6 @@ from dataclasses import dataclass
 
 from reader import new, BytesReader
 from common import HandshakeType
-from reader.new import BytesConverter, BytesConvertable
 from .extension_data import ExtensionReply
 
 
@@ -11,9 +10,9 @@ class SupportedVersionsClientHello(new.TLSObject):
     version: list[int]
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(new.Variable(1), split=2)
+            (1, True, 2)
         ]
 
 
@@ -22,9 +21,9 @@ class SupportedVersionsServerHello(new.TLSObject):
     version: int
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(2)
+            2
         ]
 
 

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from common import NamedGroup
 from reader import new
-from reader.new import BytesConverter, BytesConvertable
 from .extension_data import ExtensionReply
 
 
@@ -14,7 +13,7 @@ class SupportedGroups(new.TLSObject):
         return ExtensionReply(f"Supported Groups: {NamedGroup.x25519}")
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(new.Variable(2), split=2)
+            (2, True, 2)
         ]

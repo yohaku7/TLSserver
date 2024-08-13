@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 
 from common import NamedGroup, HandshakeType
-from reader import Block, Blocks, new, BytesReader
-from reader.new import BytesConverter, BytesConvertable
+from reader import new, BytesReader
 
 __all__ = [
     "KeyShare", "KeyShareServerHello", "KeyShareHelloRetryRequest", "KeyShareClientHello",
@@ -16,10 +15,10 @@ class KeyShareEntry(new.TLSObject):
     key_exchange: bytes
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(2),
-            new.Block(new.Length(2, variable=True))
+            2,
+            (2, True),
         ]
 
 
@@ -28,9 +27,9 @@ class KeyShareClientHello(new.TLSObject):
     client_shares: list[KeyShareEntry]
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(new.Length(2, variable=True)),
+            (2, True),
         ]
 
 
@@ -39,9 +38,9 @@ class KeyShareHelloRetryRequest(new.TLSObject):
     selected_group: NamedGroup
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(2)
+            2
         ]
 
 
@@ -50,9 +49,9 @@ class KeyShareServerHello(new.TLSObject):
     server_share: KeyShareEntry
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            KeyShareEntry,
+            None
         ]
 
 

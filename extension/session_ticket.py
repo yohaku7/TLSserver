@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from reader import new
-from reader.new import BytesConverter, BytesConvertable
 
 # RFC8447, RFC5077 §3.2 を参照。
 
@@ -18,7 +17,7 @@ class SessionTicket(new.TLSObject):
     ticket: bytes
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(0)
+            0
         ]

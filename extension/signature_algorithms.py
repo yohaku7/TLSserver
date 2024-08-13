@@ -2,7 +2,6 @@ from dataclasses import dataclass
 
 from common import SignatureScheme
 from reader import new
-from reader.new import BytesConverter, BytesConvertable
 
 
 @dataclass(frozen=True)
@@ -10,9 +9,9 @@ class SignatureAlgorithms(new.TLSObject):
     supported_signature_algorithms: list[SignatureScheme]
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(new.Variable(2), split=2),
+            (2, True, 2)
         ]
 
 
@@ -21,7 +20,7 @@ class SignatureAlgorithmsCert(new.TLSObject):
     supported_signature_algorithms: list[SignatureScheme]
 
     @classmethod
-    def _get_lengths(cls) -> list[BytesConverter | BytesConvertable]:
+    def _get_lengths(cls) -> list[int | tuple | None]:
         return [
-            new.Block(new.Variable(2), split=2),
+            (2, True, 2)
         ]

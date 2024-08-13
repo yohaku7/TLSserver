@@ -1,21 +1,20 @@
 from common import ContentType
 from dataclasses import dataclass
-from typing import ClassVar
-from reader import Blocks, Block, EnumBlock, RestBlock
+from reader import new
 
 
 @dataclass(frozen=True)
-class TLSCiphertext:
+class TLSCiphertext(new.TLSObject):
     opaque_type: ContentType
     legacy_record_version: int
     length: int
     encrypted_record: bytes
-    blocks: ClassVar[Blocks] = Blocks([
-        EnumBlock(ContentType),
-        Block(2, "int"),
-        Block(2, "int"),
-        RestBlock("raw")
-    ])
 
-
-TLSCiphertext.blocks.after_parse_factory = TLSCiphertext
+    @classmethod
+    def _get_lengths(cls) -> list[int | tuple | None]:
+        return [
+            1,
+            2,
+            2,
+            -1
+        ]

@@ -13,7 +13,6 @@ from cryptography import x509
 
 from Crypto.Util.number import long_to_bytes
 
-
 SHA256_HASH_LEN: int = 32
 
 
@@ -90,6 +89,7 @@ class TLSKey:
                 hmac = HMAC(extracted_key, hashes.SHA256())
                 hmac.update(_T(n - 1) + context + long_to_bytes(n))
                 return hmac.finalize()
+
         N = math.ceil(length / SHA256_HASH_LEN)
         T = b""
         for n in range(1, N + 1):
@@ -115,7 +115,7 @@ class TLSKey:
         raw = b""
         for m in M:
             hs = Handshake.make(m)
-            raw += Handshake.blocks.unparse(hs)
+            raw += Handshake.unparse(hs)
         sha256.update(raw)
         return sha256.finalize()
 
@@ -193,7 +193,7 @@ class TLSKey:
         )
         self.exporter_master_secret = TLSKey.Derive_Secret(self.master_secret, b"exp master", *handshake_ctx)
         self.resumption_master_secret = TLSKey.Derive_Secret(self.master_secret, b"res master",
-                                                              *[*handshake_ctx, client_finished])
+                                                             *[*handshake_ctx, client_finished])
 
     def calc_nonce(self, write_iv: bytes, side: str):
         # RFC8446 §5.3, RFC5116 §5.1
@@ -203,7 +203,7 @@ class TLSKey:
         elif side == "client":
             seq_bin = long_to_bytes(self.seq_client, iv_length)
         else:
-            0/0
+            raise ValueError("何故かsideが違います。")
         return bytes(x1 ^ x2 for x1, x2 in zip(write_iv, seq_bin))
 
     def seq_upd_server(self):
