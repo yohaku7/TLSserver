@@ -21,7 +21,8 @@ from handshake import ClientHello, ServerHello
 from common import ContentType, HandshakeType, ExtensionType, NamedGroup, SignatureScheme
 
 import secrets
-from crypto import TLSKey, HandshakeContext
+import hashlib
+from crypto import TLSKey, HandshakeContext, elliptic
 from record.tls_inner_plaintext import TLSInnerPlaintext
 
 
@@ -266,9 +267,16 @@ class TLSServer:
             b"\x00" +
             signature_content
         )
-        private_key = TLSKey.load_x509_key("temp/key.pem")
-        signature = private_key.sign(signature_content, ECDSA(SHA256()))
-        cv = CertificateVerify(algorithm, signature)
+        # private_key = TLSKey.load_x509_key("temp/key.pem")
+        encoded = hashlib.sha256(signature_content).digest()
+        ec = elliptic.EC(elliptic.secp256r1)
+        ecdsa = elliptic.ECDSA(ec)
+        pub, key = ecdsa.generate_key()
+        signature = key.sign(encoded)
+        print(signature)
+        assert pub.verify(signature, encoded)
+        # signature = private_key.sign(signature_content, ECDSA(SHA256()))
+        cv = CertificateVerify(algorithm, signature.encode())
         return self.encrypt_handshake(cv)
 
 
