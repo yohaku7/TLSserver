@@ -2,11 +2,12 @@
 import socket
 import pprint
 
-from cryptography.hazmat.primitives._serialization import Encoding
-from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
-from cryptography.hazmat.primitives.hashes import SHA256
+from Crypto.Util.number import long_to_bytes
+from cryptography.hazmat.primitives._serialization import Encoding, PrivateFormat, NoEncryption
+
 from alert import Alert
-from alert.alert import AlertLevel, AlertDescription
+from alert.alert import AlertDescription
+from crypto.elliptic import ECPublicKey, ECPrivateKey
 from extension.key_share import KeyShareClientHello, KeyShareServerHello, KeyShareEntry
 from extension.psk_key_exchange_modes import PskKeyExchangeMode
 from extension.extension_parser import ExtensionHeader, extensions
@@ -22,7 +23,7 @@ from common import ContentType, HandshakeType, ExtensionType, NamedGroup, Signat
 
 import secrets
 import hashlib
-from crypto import TLSKey, HandshakeContext, elliptic
+from crypto import TLSKey, HandshakeContext, elliptic, asn1
 from record.tls_inner_plaintext import TLSInnerPlaintext
 
 
@@ -267,15 +268,18 @@ class TLSServer:
             b"\x00" +
             signature_content
         )
-        # private_key = TLSKey.load_x509_key("temp/key.pem")
         encoded = hashlib.sha256(signature_content).digest()
-        ec = elliptic.EC(elliptic.secp256r1)
-        ecdsa = elliptic.ECDSA(ec)
-        pub, key = ecdsa.generate_key()
-        signature = key.sign(encoded)
-        print(signature)
-        assert pub.verify(signature, encoded)
-        # signature = private_key.sign(signature_content, ECDSA(SHA256()))
+        key = TLSKey.load_x509_key("temp/key.pem")
+        priv_key = ECPrivateKey(key.private_numbers().private_value, elliptic.secp256r1)
+        self.__key.ecdsa_key = priv_key
+        pub_key = priv_key.public_key()
+        self.__key.ecdsa_cert = pub_key
+
+        signature = self.__key.ecdsa_key.sign(encoded)
+        with open("temp/sign.raw", "wb") as f:
+            f.write(signature.encode())
+        assert self.__key.ecdsa_cert.verify(signature, encoded)
+
         cv = CertificateVerify(algorithm, signature.encode())
         return self.encrypt_handshake(cv)
 

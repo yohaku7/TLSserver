@@ -1,6 +1,7 @@
 import math
 
 from common import NamedGroup, ContentType
+from crypto import elliptic
 from extension.key_share import KeyShareEntry
 from handshake import ClientHello, ServerHello, Handshake
 from reader import Blocks, Block
@@ -38,6 +39,9 @@ class TLSKey:
         self.server_application_traffic_secret: list[bytes] = []
         self.exporter_master_secret: bytes | None = None
         self.resumption_master_secret: bytes | None = None
+
+        self.ecdsa_cert: elliptic.ECPublicKey | None = None
+        self.ecdsa_key: elliptic.ECPrivateKey | None = None
 
     def exchange_key_x25519(self, entry: KeyShareEntry):
         assert entry.group == NamedGroup.x25519

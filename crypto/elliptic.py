@@ -5,7 +5,10 @@ import math
 from dataclasses import dataclass, field
 from abc import ABCMeta
 import secrets
+
 from Crypto.Util.number import long_to_bytes
+
+from crypto import der, asn1
 
 
 @dataclass
@@ -111,6 +114,42 @@ class ECPoint:
     def y(self) -> int:
         return self.__y
 
+    def encode(self):
+        # SEC 1 v2.0 §2.3.3, §2.3.5, §2.3.7
+        if self == ECPoint.O:
+            return b"\x00"
+        # 点の圧縮は行われていないものと仮定する。
+        mlen = math.ceil(math.log2(self.__param.n) / 8)
+        # self.__param.n (有限体の位数の最大の素因数)は奇素数と仮定する。
+        # §2.3.7 のとおりに変換する。
+        assert 2 ** (8 * mlen) > self.x
+        # xを基数256で展開する
+        x = self.x
+        xl = [0 for _ in range(mlen)]
+        for i in range(1, mlen + 1):
+            factor = 2 ** (8 * (mlen - i))
+            while x >= factor:
+                x -= factor
+                xl[mlen - i] += 1
+        assert x == 0
+        X = b""
+        for i in range(mlen):
+            X += int.to_bytes(xl[mlen - 1 - i])
+        assert 2 ** (8 * mlen) > self.x
+        # yを基数256で展開する
+        y = self.y
+        yl = [0 for _ in range(mlen)]
+        for i in range(1, mlen + 1):
+            factor = 2 ** (8 * (mlen - i))
+            while y >= factor:
+                y -= factor
+                yl[mlen - i] += 1
+        assert y == 0
+        Y = b""
+        for i in range(mlen):
+            Y += int.to_bytes(xl[mlen - 1 - i])
+        return b"\x04" + X + Y
+
     def __eq__(self, other: ECPoint):
         if other == ECPoint.O:
             return False
@@ -161,10 +200,22 @@ secp256r1 = ECParameter(
 )
 
 
+# RFC5915
 @dataclass(frozen=True)
 class ECPrivateKey:
     key: int
     param: ECParameter
+
+    @classmethod
+    def from_private_bytes(cls, private_key: bytes, param: ECParameter) -> ECPrivateKey:
+        return cls(int.from_bytes(private_key), param)
+
+    @property
+    def digest(self) -> bytes:
+        return long_to_bytes(self.key)
+
+    def public_key(self) -> ECPublicKey:
+        return ECPublicKey(self.param.G * self.key, self.param)
 
     def sign(self, message: bytes) -> ECSign:
         h = int.from_bytes(message) % self.param.n
@@ -193,7 +244,10 @@ class ECSign:
     s: int
 
     def encode(self) -> bytes:
-        return long_to_bytes(self.r) + long_to_bytes(self.s)
+        return asn1.Sequence.encode([
+            asn1.Integer(self.r),
+            asn1.Integer(self.s),
+        ])
 
 
 @dataclass(frozen=True)
@@ -212,11 +266,14 @@ def main():
     ecdsa = ECDSA(E)
     pub, key = ecdsa.generate_key()
     print(pub, key)
+    print(key.digest, len(key.digest))
+    print(f"pub key: {pub.key.encode()}, len: {len(pub.key.encode())}")
     s = key.sign(b"\xff\xff")
     print(s)
+    print(s.encode().hex())
     print(pub.verify(s, b"\xff\xff"))
+    print(root_mod(13, 17))
 
 
 if __name__ == '__main__':
-    print(root_mod(13, 17))
     main()
