@@ -2,12 +2,11 @@
 import socket
 import pprint
 
-from Crypto.Util.number import long_to_bytes
-from cryptography.hazmat.primitives._serialization import Encoding, PrivateFormat, NoEncryption
+from cryptography.hazmat.primitives._serialization import Encoding
 
 from alert import Alert
 from alert.alert import AlertDescription
-from crypto.elliptic import ECPublicKey, ECPrivateKey
+from crypto.elliptic import ECPrivateKey, ECDSA
 from extension.key_share import KeyShareClientHello, KeyShareServerHello, KeyShareEntry
 from extension.psk_key_exchange_modes import PskKeyExchangeMode
 from extension.extension_parser import ExtensionHeader, extensions
@@ -23,7 +22,7 @@ from common import ContentType, HandshakeType, ExtensionType, NamedGroup, Signat
 
 import secrets
 import hashlib
-from crypto import TLSKey, HandshakeContext, elliptic, asn1
+from crypto import TLSKey, HandshakeContext, elliptic
 from record.tls_inner_plaintext import TLSInnerPlaintext
 
 
@@ -276,8 +275,6 @@ class TLSServer:
         self.__key.ecdsa_cert = pub_key
 
         signature = self.__key.ecdsa_key.sign(encoded)
-        with open("temp/sign.raw", "wb") as f:
-            f.write(signature.encode())
         assert self.__key.ecdsa_cert.verify(signature, encoded)
 
         cv = CertificateVerify(algorithm, signature.encode())
