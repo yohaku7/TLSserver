@@ -4,8 +4,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 
-import crypto.gcm
-from crypto import modes, padding
+from crypto import modes, padding, gcm
 from Crypto.Cipher import AES
 
 
@@ -371,20 +370,26 @@ def main():
     dec = ecb.decrypt(enc)
     assert dec == plaintext
 
-    A = b"Hello World"
-    iv = b"\x20" * 12
-
-    g = crypto.gcm.GCM(iv)
+def assert_gcm():
+    key = bytes.fromhex("AD7A2BD03EAC835A6F620FDCB506B345")
+    iv = bytes.fromhex("12153524C0895E81B2C28465")
+    aes128 = AES128(key)
+    A = bytes.fromhex("D609B1F056637A0D46DF998D88E5222A B2C2846512153524C0895E8108000F10"
+                      "1112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F30 313233340001")
+    g = gcm.GCM(iv)
+    plaintext = b""
     enc, tag = g.AuthenticatedEncrypt(aes128, plaintext, A)
-    print("e:", enc, "t:", tag)
+    print(enc.hex(), tag.hex())
 
     actual_aes128 = AES.new(key, AES.MODE_GCM, nonce=iv)
     actual_aes128.update(A)
     c, t = actual_aes128.encrypt_and_digest(plaintext)
-    print(c, t)
+    print(c.hex(), t.hex())
 
     print(enc == c)
+    print(tag == t)
 
 
 if __name__ == '__main__':
     main()
+    assert_gcm()
