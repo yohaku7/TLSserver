@@ -77,7 +77,6 @@ def root_mod(a: int, p: int) -> int:
         z = 2
         while legendre(z, p) != -1:
             z += 1
-            print(z)
         M = S
         c = pow(z, Q, p)
         t = pow(a, Q, p)
@@ -234,7 +233,6 @@ class ECPublicKey:
     def verify(self, sign: ECSign, message: bytes) -> bool:
         u = (pow(sign.s, -1, self.param.n) * int.from_bytes(message)) % self.param.n
         v = (pow(sign.s, -1, self.param.n) * sign.r) % self.param.n
-        print(self.param.G * u)
         return ((self.param.G * u) + (self.key * v)).x == sign.r
 
 

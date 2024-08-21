@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
 
 
@@ -335,45 +336,47 @@ class SBox:
         return cls.__invSBox[x][y]
 
 
-@dataclass
-class AESCipher:
-    name: str
-    key_length: int = field(kw_only=True)
-    block_size: int = field(default=16, kw_only=True)
-    round_number: int = field(kw_only=True)
-    key_word_length: int = field(init=False)
+@dataclass(frozen=True)
+class AES(metaclass=ABCMeta):
+    key: bytes
 
-    def __post_init__(self):
-        assert self.key_length % 8 == 0
-        self.key_word_length = self.key_length // 4
+    @abstractmethod
+    def encrypt(self, plaintext: bytes) -> bytes:
+        pass
 
-    def new(self, key: bytes, mode) -> AES:
-        return AES(key, self, mode)
-
-    def cipher(self, data: bytes, key: bytes) -> bytes:
-        return AESAlgorithm.Cipher(data, self.round_number, key)
-
-    def inv_cipher(self, data: bytes, key: bytes) -> bytes:
-        return AESAlgorithm.InvCipher(data, self.round_number, key)
+    @abstractmethod
+    def decrypt(self, ciphertext: bytes) -> bytes:
+        pass
 
 
 @dataclass(frozen=True)
-class AES:
-    key: bytes
-    cipher: AESCipher
-    mode: object
-
+class AES128(AES):
     def encrypt(self, plaintext: bytes) -> bytes:
-        return self.mode.encrypt(self.cipher.cipher, plaintext)
+        assert len(self.key) == 16
+        return AESAlgorithm.Cipher(plaintext, 10, self.key)
 
     def decrypt(self, ciphertext: bytes) -> bytes:
-        return self.mode.decrypt(self.cipher.cipher, ciphertext)
-
-    # def cipher(self, data: bytes) -> bytes:
-    #     return Cipher(data, self.cipher.round_number, KeyExpansion(self.key))
-    #
-    # def inv_cipher(self, data: bytes) -> bytes:
-    #     return InvCipher(data, self.cipher.round_number, KeyExpansion(self.key))
+        assert len(self.key) == 16
+        return AESAlgorithm.InvCipher(ciphertext, 10, self.key)
 
 
-AES128 = AESCipher("AES128", key_length=16, round_number=10)
+@dataclass(frozen=True)
+class AES192(AES):
+    def encrypt(self, plaintext: bytes) -> bytes:
+        assert len(self.key) == 24
+        return AESAlgorithm.Cipher(plaintext, 12, self.key)
+
+    def decrypt(self, ciphertext: bytes) -> bytes:
+        assert len(self.key) == 24
+        return AESAlgorithm.InvCipher(ciphertext, 12, self.key)
+
+
+@dataclass(frozen=True)
+class AES256(AES):
+    def encrypt(self, plaintext: bytes) -> bytes:
+        assert len(self.key) == 32
+        return AESAlgorithm.Cipher(plaintext, 14, self.key)
+
+    def decrypt(self, ciphertext: bytes) -> bytes:
+        assert len(self.key) == 32
+        return AESAlgorithm.InvCipher(ciphertext, 14, self.key)

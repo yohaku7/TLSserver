@@ -30,7 +30,10 @@ class Integer:
 
     def encode(self) -> bytes:
         encoded = long_to_bytes(self.value)
-        return Integer.tag + int.to_bytes(len(encoded), 1) + encoded
+        if (encoded[0] & 0x80) >> 7 == 1:
+            return Integer.tag + int.to_bytes(len(encoded) + 1, 1) + b"\x00" + encoded
+        else:
+            return Integer.tag + int.to_bytes(len(encoded), 1) + encoded
 
 
 class Sequence:

@@ -2,13 +2,14 @@ import math
 
 from common import NamedGroup, ContentType
 from crypto import elliptic
+from crypto.aes import AES128
+from crypto.gcm import GCM
 from extension.key_share import KeyShareEntry
 from handshake import ClientHello, ServerHello, Handshake
 from reader import Blocks, Block
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey, X25519PrivateKey
 from cryptography.hazmat.primitives.hmac import HMAC, hashes
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography import x509
 
@@ -67,7 +68,6 @@ class TLSKey:
         handshake_secret = TLSKey.HKDF_Extract(secret_state, self.x25519_shared_key)
         self.client_handshake_traffic_secret = TLSKey.Derive_Secret(handshake_secret, b"c hs traffic", ch, sh)
         self.server_handshake_traffic_secret = TLSKey.Derive_Secret(handshake_secret, b"s hs traffic", ch, sh)
-        print(f"sss: {self.server_handshake_traffic_secret.hex()}")
 
         secret_state = TLSKey.Derive_Secret(handshake_secret, b"derived")
         self.__secret_state = secret_state
@@ -133,14 +133,13 @@ class TLSKey:
         assert self.server_handshake_traffic_secret is not None
         write_key = TLSKey.HKDF_Expand_Label(self.server_handshake_traffic_secret, b"key", b"", 16)
         write_iv = TLSKey.HKDF_Expand_Label(self.server_handshake_traffic_secret, b"iv", b"", 12)
-        aes128 = Cipher(algorithms.AES128(write_key), modes.GCM(self.calc_nonce(write_iv, "server")))
-        encryptor = aes128.encryptor()
-        encryptor.authenticate_additional_data(
+        additional_data = (
             long_to_bytes(opaque_type) +
             long_to_bytes(legacy_record_version) +
-            long_to_bytes(length, 2)  # RFC8446 §5.2
+             long_to_bytes(length, 2)  # RFC8446 §5.2
         )
-        return encryptor.update(data) + encryptor.finalize(), encryptor.tag
+        gcm = GCM(AES128(write_key), self.calc_nonce(write_iv, "server"))
+        return gcm.encrypt(additional_data, data, 16)
 
     def decrypt_handshake(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int):
         tag = data[-16:]
@@ -148,27 +147,25 @@ class TLSKey:
         assert self.client_handshake_traffic_secret is not None
         write_key = TLSKey.HKDF_Expand_Label(self.client_handshake_traffic_secret, b"key", b"", 16)
         write_iv = TLSKey.HKDF_Expand_Label(self.client_handshake_traffic_secret, b"iv", b"", 12)
-        aes128 = Cipher(algorithms.AES128(write_key), modes.GCM(self.calc_nonce(write_iv, "client")))
-        decryptor = aes128.decryptor()
-        decryptor.authenticate_additional_data(
+        additional_data = (
             long_to_bytes(opaque_type) +
             long_to_bytes(legacy_record_version) +
             long_to_bytes(length, 2)  # RFC8446 §5.2
         )
-        return decryptor.update(real_data) + decryptor.finalize_with_tag(tag)
+        gcm = GCM(AES128(write_key), self.calc_nonce(write_iv, "client"))
+        return gcm.decrypt(additional_data, real_data, tag)
 
     def encrypt_application_data(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int):
         assert self.server_application_traffic_secret[0] is not None
         write_key = TLSKey.HKDF_Expand_Label(self.server_application_traffic_secret[0], b"key", b"", 16)
         write_iv = TLSKey.HKDF_Expand_Label(self.server_application_traffic_secret[0], b"iv", b"", 12)
-        aes128 = Cipher(algorithms.AES128(write_key), modes.GCM(self.calc_nonce(write_iv, "client")))
-        encryptor = aes128.encryptor()
-        encryptor.authenticate_additional_data(
+        additional_data = (
             long_to_bytes(opaque_type) +
             long_to_bytes(legacy_record_version) +
             long_to_bytes(length, 2)  # RFC8446 §5.2
         )
-        return encryptor.update(data) + encryptor.finalize()
+        gcm = GCM(AES128(write_key), self.calc_nonce(write_iv, "client"))
+        return gcm.encrypt(additional_data, data, 16)
 
     def decrypt_application_data(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int):
         tag = data[-16:]
@@ -176,14 +173,13 @@ class TLSKey:
         assert self.client_application_traffic_secret[0] is not None
         write_key = TLSKey.HKDF_Expand_Label(self.client_application_traffic_secret[0], b"key", b"", 16)
         write_iv = TLSKey.HKDF_Expand_Label(self.client_application_traffic_secret[0], b"iv", b"", 12)
-        aes128 = Cipher(algorithms.AES128(write_key), modes.GCM(self.calc_nonce(write_iv, "client")))
-        decryptor = aes128.decryptor()
-        decryptor.authenticate_additional_data(
+        additional_data = (
             long_to_bytes(opaque_type) +
             long_to_bytes(legacy_record_version) +
             long_to_bytes(length, 2)  # RFC8446 §5.2
         )
-        return decryptor.update(real_data) + decryptor.finalize_with_tag(tag)
+        gcm = GCM(AES128(write_key), self.calc_nonce(write_iv, "client"))
+        return gcm.decrypt(additional_data, real_data, tag)
 
     def make_application_key(self, handshake_ctx, client_finished):
         self.master_secret = TLSKey.HKDF_Extract(self.__secret_state, b"\00" * 32)
