@@ -9,6 +9,9 @@ from crypto.padding import zero_pad
 class GCMAlgorithm:
     @classmethod
     def BlockMul(cls, X: int, Y: int):
+        rev = lambda x: int(format(x, "0128b")[::-1], 2)
+        X = rev(X)
+        Y = rev(Y)
         def _BlockXTimes(x: int) -> int:
             # 規格書ではリトルエンディアンだが、ビッグエンディアンで計算する
             R = (1 << 128) | 0b10000111
@@ -27,7 +30,7 @@ class GCMAlgorithm:
                 res ^= X
             X = _BlockXTimes(X)
             V >>= 1
-        return res
+        return rev(res)
 
     @classmethod
     def BlockPow(cls, X: int, exp: int) -> int:
@@ -47,6 +50,7 @@ class GCMAlgorithm:
         print(f"H = {subkey.hex()}")
         X = 0
         A = zero_pad(authenticated_data, 16)
+        print(f"C = {ciphertext.hex()}")
         C = zero_pad(ciphertext, 16)
         rev = lambda x: int(bin(x)[2:][::-1], 2)
         for i in range(0, len(A), 16):
@@ -66,8 +70,7 @@ class GCMAlgorithm:
     @classmethod
     def Encrypt(cls, key: bytes, iv: bytes, authenticated_data: bytes, plaintext: bytes, tag_len: int) -> tuple[bytes, bytes]:
         H = AESAlgorithm.Cipher(int.to_bytes(0, 16), 10, key)
-        rev = lambda x: int(bin(x)[2:][::-1], 2)
-        H = int.to_bytes(rev(int.from_bytes(H)), 16)
+        H = int.to_bytes(int.from_bytes(H), 16)
         print(f"H: {H.hex()}")
         counter = GCMCounter.generate(H, iv)
         Y0 = counter.encode()
@@ -81,7 +84,7 @@ class GCMAlgorithm:
             print(f"E[{i}:{i + 16}] = {E.hex()}")
             Plen = len(P)
             E = int.from_bytes(E[:Plen])
-            C += int.to_bytes(int.from_bytes(P) ^ E, 16)
+            C += int.to_bytes(int.from_bytes(P) ^ E, Plen)
         print(f"E[Y0] = {AESAlgorithm.Cipher(Y0, 10, key).hex()}")
         ghash = GCMAlgorithm.GHash(H, authenticated_data, C)
         print(f"GHASH(H, A, C) = {int.to_bytes(ghash, 16).hex()}")
