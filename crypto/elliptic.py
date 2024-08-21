@@ -8,7 +8,7 @@ import secrets
 
 from Crypto.Util.number import long_to_bytes
 
-from crypto import der, asn1
+from crypto import asn1
 
 
 @dataclass

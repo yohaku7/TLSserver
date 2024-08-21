@@ -1,19 +1,17 @@
 from dataclasses import dataclass
 from abc import ABCMeta, abstractmethod
 
-from crypto.aes import AES128
+from crypto.aes import AESCipher
 
 
 @dataclass(frozen=True)
 class AESMode(metaclass=ABCMeta):
-    aes: AES128
-
     @abstractmethod
-    def encrypt(self, plaintext: bytes) -> bytes:
+    def encrypt(self, aes, plaintext: bytes) -> bytes:
         pass
 
     @abstractmethod
-    def decrypt(self, ciphertext: bytes) -> bytes:
+    def decrypt(self, aes, ciphertext: bytes) -> bytes:
         pass
 
 
@@ -24,7 +22,7 @@ class AESModeWithIV(AESMode, metaclass=ABCMeta):
 
 @dataclass(frozen=True)
 class AuthenticatedAESMode(metaclass=ABCMeta):
-    aes: AES128
+    aes: object
 
     @abstractmethod
     def authenticated_encrypt(self, plaintext: bytes, authenticated_data: bytes) -> bytes:
@@ -43,22 +41,31 @@ class AESModeWithIVAndAdditionalData(metaclass=ABCMeta):
 
 @dataclass(frozen=True)
 class ECB(AESMode):
-    def encrypt(self, plaintext: bytes) -> bytes:
+    def encrypt(self, cipher: AESCipher, plaintext: bytes) -> bytes:
         assert len(plaintext) % 16 == 0
         blocks = []
         for i in range(0, len(plaintext), 16):
             blocks.append(plaintext[i: i + 16])
         enc = b""
         for block in blocks:
-            enc += self.aes.cipher(block)
+            enc += cipher.cipher(plaintext,)
         return enc
 
-    def decrypt(self, ciphertext: bytes) -> bytes:
+    def decrypt(self, aes, ciphertext: bytes) -> bytes:
         assert len(ciphertext) % 16 == 0
         blocks = []
         for i in range(0, len(ciphertext), 16):
             blocks.append(ciphertext[i: i + 16])
         dec = b""
         for block in blocks:
-            dec += self.aes.inv_cipher(block)
+            dec += aes(block)
         return dec
+
+
+@dataclass(frozen=True)
+class HasNoMode(AESMode):
+    def encrypt(self, plaintext: bytes) -> bytes:
+        pass
+
+    def decrypt(self, ciphertext: bytes) -> bytes:
+        pass

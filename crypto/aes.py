@@ -4,11 +4,8 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 
-from crypto import modes, padding, gcm
-from Crypto.Cipher import AES
 
-
-# 参照: NIST規格
+# 参照: NIST FIPS197 (https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf)
 
 @dataclass
 class State:
@@ -60,6 +57,7 @@ class State:
         return res
 
 
+# FIX: なんかボトルネックになりそう
 @dataclass
 class Word:
     __bytes: list[int]
@@ -82,37 +80,204 @@ class Word:
             res[i] = self[i] ^ other[i]
         return Word(res)
 
-
-# Refer: §4.5
-def XTimes(b: int):
-    b_7 = (b >> 7) & 1
-    if b_7 == 0:
-        return b << 1
-    else:
-        return (b << 1) ^ 0b100011011
+    def __repr__(self):
+        return bytes(self.__bytes).hex()
 
 
-def XTimesMul(a: int, b: int):
-    res = 0
-    t = b
-    while t != 0:
-        if t & 1 == 1:
-            res ^= a
-        a = XTimes(a)
-        t >>= 1
-    return res
+class AESAlgorithm:
+    @classmethod
+    def xTimes(cls, x: int) -> int:
+        # §4.5
+        x_7 = (x >> 7) & 1
+        if x_7 == 0:
+            return x << 1
+        else:
+            return (x << 1) ^ 0b100011011
 
+    @classmethod
+    def xTimesMul(cls, x: int, y: int) -> int:
+        res = 0
+        a = x
+        t = y
+        while t != 0:
+            if t & 1 == 1:
+                res ^= a
+            a = cls.xTimes(a)
+            t >>= 1
+        return res
 
-def XTimesPow(a: int, pow: int) -> int:
-    res = 1
-    t = a
-    n = pow
-    while n != 0:
-        if n & 1 == 1:
-            res = XTimesMul(res, t)
-        t = XTimesMul(t, t)
-        n >>= 1
-    return res
+    @classmethod
+    def xTimesPow(cls, x: int, exp: int) -> int:
+        res = 1
+        t = x
+        n = exp
+        while n != 0:
+            if n & 1 == 1:
+                res = cls.xTimesMul(res, t)
+            t = cls.xTimesMul(t, t)
+            n >>= 1
+        return res
+
+    @classmethod
+    def SBox(cls, x: int) -> int:
+        return SBox.SBox(x)
+
+    @classmethod
+    def InvSBox(cls, x: int) -> int:
+        return SBox.InvSBox(x)
+
+    @classmethod
+    def SubBytes(cls, state: State) -> State:
+        # §5.1.1
+        res = state
+        for r in range(4):
+            for c in range(4):
+                res[r, c] = SBox.SBox(state[r, c])
+        return res
+
+    @classmethod
+    def InvSubBytes(cls, state: State) -> State:
+        # §5.3.2
+        res = state
+        for r in range(4):
+            for c in range(4):
+                res[r, c] = SBox.InvSBox(state[r, c])
+        return res
+
+    @classmethod
+    def ShiftRows(cls, state: State) -> State:
+        # §5.1.2
+        res = copy.deepcopy(state)
+        for r in range(4):
+            for c in range(4):
+                res[r, c] = state[r, (c + r) % 4]
+        return res
+
+    @classmethod
+    def InvShiftRows(cls, state: State) -> State:
+        # §5.3.1
+        res = copy.deepcopy(state)
+        for r in range(4):
+            for c in range(4):
+                res[r, c] = state[r, (c - r) % 4]
+        return res
+
+    @classmethod
+    def MixColumns(cls, state: State) -> State:
+        # §5.1.3
+        a = Word([0x02, 0x01, 0x01, 0x03])
+        res = copy.deepcopy(state)
+        for c in range(4):
+            res[0, c] = (cls.xTimesMul(a[0], state[0, c]) ^ cls.xTimesMul(a[3], state[1, c]) ^ cls.xTimesMul(a[2], state[2, c]) ^
+                         cls.xTimesMul(a[1], state[3, c]))
+            res[1, c] = (cls.xTimesMul(a[1], state[0, c]) ^ cls.xTimesMul(a[0], state[1, c]) ^ cls.xTimesMul(a[3], state[2, c]) ^
+                         cls.xTimesMul(a[2], state[3, c]))
+            res[2, c] = (cls.xTimesMul(a[2], state[0, c]) ^ cls.xTimesMul(a[1], state[1, c]) ^ cls.xTimesMul(a[0], state[2, c]) ^
+                         cls.xTimesMul(a[3], state[3, c]))
+            res[3, c] = (cls.xTimesMul(a[3], state[0, c]) ^ cls.xTimesMul(a[2], state[1, c]) ^ cls.xTimesMul(a[1], state[2, c]) ^
+                         cls.xTimesMul(a[0], state[3, c]))
+        return res
+
+    @classmethod
+    def InvMixColumns(cls, state: State) -> State:
+        # §5.3.3
+        a = Word([0x0e, 0x09, 0x0d, 0x0b])
+        res = copy.deepcopy(state)
+        for c in range(4):
+            res[0, c] = (cls.xTimesMul(a[0], state[0, c]) ^ cls.xTimesMul(a[3], state[1, c]) ^ cls.xTimesMul(a[2], state[2, c]) ^
+                         cls.xTimesMul(a[1], state[3, c]))
+            res[1, c] = (cls.xTimesMul(a[1], state[0, c]) ^ cls.xTimesMul(a[0], state[1, c]) ^ cls.xTimesMul(a[3], state[2, c]) ^
+                         cls.xTimesMul(a[2], state[3, c]))
+            res[2, c] = (cls.xTimesMul(a[2], state[0, c]) ^ cls.xTimesMul(a[1], state[1, c]) ^ cls.xTimesMul(a[0], state[2, c]) ^
+                         cls.xTimesMul(a[3], state[3, c]))
+            res[3, c] = (cls.xTimesMul(a[3], state[0, c]) ^ cls.xTimesMul(a[2], state[1, c]) ^ cls.xTimesMul(a[1], state[2, c]) ^
+                         cls.xTimesMul(a[0], state[3, c]))
+        return res
+
+    @classmethod
+    def AddRoundKey(cls, state: State, round_keys: list[Word]) -> State:
+        assert len(round_keys) == 4
+        res = copy.deepcopy(state)
+        for c in range(4):
+            key = round_keys[c]
+            res[0, c] = state[0, c] ^ key[0]
+            res[1, c] = state[1, c] ^ key[1]
+            res[2, c] = state[2, c] ^ key[2]
+            res[3, c] = state[3, c] ^ key[3]
+        return res
+
+    @classmethod
+    def KeyExpansion(cls, key: bytes, round_number: int) -> list[Word]:
+        # §5.2 Alg. 2
+        def RotWord(word: Word) -> Word:
+            return Word([word[1], word[2], word[3], word[0]])
+
+        def SubWord(word: Word) -> Word:
+            return Word([SBox.SBox(word[0]), SBox.SBox(word[1]), SBox.SBox(word[2]), SBox.SBox(word[3])])
+
+        Rcon = [
+            None,
+            Word([0x01, 0x00, 0x00, 0x00]),
+            Word([0x02, 0x00, 0x00, 0x00]),
+            Word([0x04, 0x00, 0x00, 0x00]),
+            Word([0x08, 0x00, 0x00, 0x00]),
+            Word([0x10, 0x00, 0x00, 0x00]),
+            Word([0x20, 0x00, 0x00, 0x00]),
+            Word([0x40, 0x00, 0x00, 0x00]),
+            Word([0x80, 0x00, 0x00, 0x00]),
+            Word([0x1b, 0x00, 0x00, 0x00]),
+            Word([0x36, 0x00, 0x00, 0x00])
+        ]
+        assert len(key) % 8 == 0
+        Nk, Nr = len(key) // 4, round_number
+        i = 0
+        w: list[Word | None] = [None for _ in range(4 * (Nr + 1))]
+        while i <= Nk - 1:
+            w[i] = Word(list(key[4 * i: 4 * i + 4]))
+            i += 1
+        while i <= 4 * Nr + 3:
+            temp = w[i - 1]
+            if i % Nk == 0:
+                temp = SubWord(RotWord(temp)) ^ Rcon[i // Nk]
+            elif Nk > 6 and i % Nk == 4:
+                temp = SubWord(temp)
+            w[i] = w[i - Nk] ^ temp
+            i += 1
+        return w
+
+    @classmethod
+    def Cipher(cls, data: bytes, round_number: int, key: bytes) -> bytes:
+        # §5.1 Alg. 1
+        assert len(data) == 16
+        round_keys = cls.KeyExpansion(key, round_number)
+        state = State.from_input_bytes(data)
+        state = cls.AddRoundKey(state, round_keys[:4])
+        for r in range(1, round_number):
+            state = cls.SubBytes(state)
+            state = cls.ShiftRows(state)
+            state = cls.MixColumns(state)
+            state = cls.AddRoundKey(state, round_keys[4 * r: 4 * r + 4])
+        state = cls.SubBytes(state)
+        state = cls.ShiftRows(state)
+        state = cls.AddRoundKey(state, round_keys[4 * round_number: 4 * round_number + 4])
+        return state.output_bytes()
+
+    @classmethod
+    def InvCipher(cls, data: bytes, round_number: int, key: bytes) -> bytes:
+        # §5.3 Alg. 3
+        assert len(data) == 16
+        round_keys = cls.KeyExpansion(key, round_number)
+        state = State.from_input_bytes(data)
+        state = cls.AddRoundKey(state, round_keys[4 * round_number: 4 * round_number + 4])
+        for r in range(round_number - 1, 0, -1):
+            state = cls.InvShiftRows(state)
+            state = cls.InvSubBytes(state)
+            state = cls.AddRoundKey(state, round_keys[4 * r: 4 * r + 4])
+            state = cls.InvMixColumns(state)
+        state = cls.InvShiftRows(state)
+        state = cls.InvSubBytes(state)
+        state = cls.AddRoundKey(state, round_keys[:4])
+        return state.output_bytes()
 
 
 class SBox:
@@ -146,7 +311,7 @@ class SBox:
         if b == 0:
             b_tilde = 0
         else:
-            b_tilde = XTimesPow(b, 254)
+            b_tilde = AESAlgorithm.xTimesPow(b, 254)
         b_dash = [0 for _ in range(8)]
         for i in range(8):
             b_dash[i] = (((b_tilde >> i) & 1) ^ ((b_tilde >> ((i + 4) % 8)) & 1) ^ ((b_tilde >> ((i + 5) % 8)) & 1) ^
@@ -170,226 +335,45 @@ class SBox:
         return cls.__invSBox[x][y]
 
 
-def SubBytes(state: State) -> State:
-    # §5.1.1
-    res = state
-    for r in range(4):
-        for c in range(4):
-            res[r, c] = SBox.SBox(state[r, c])
-    return res
+@dataclass
+class AESCipher:
+    name: str
+    key_length: int = field(kw_only=True)
+    block_size: int = field(default=16, kw_only=True)
+    round_number: int = field(kw_only=True)
+    key_word_length: int = field(init=False)
+
+    def __post_init__(self):
+        assert self.key_length % 8 == 0
+        self.key_word_length = self.key_length // 4
+
+    def new(self, key: bytes, mode) -> AES:
+        return AES(key, self, mode)
+
+    def cipher(self, data: bytes, key: bytes) -> bytes:
+        return AESAlgorithm.Cipher(data, self.round_number, key)
+
+    def inv_cipher(self, data: bytes, key: bytes) -> bytes:
+        return AESAlgorithm.InvCipher(data, self.round_number, key)
 
 
-def InvSubBytes(state: State) -> State:
-    # §5.3.2
-    res = state
-    for r in range(4):
-        for c in range(4):
-            res[r, c] = SBox.InvSBox(state[r, c])
-    return res
+@dataclass(frozen=True)
+class AES:
+    key: bytes
+    cipher: AESCipher
+    mode: object
+
+    def encrypt(self, plaintext: bytes) -> bytes:
+        return self.mode.encrypt(self.cipher.cipher, plaintext)
+
+    def decrypt(self, ciphertext: bytes) -> bytes:
+        return self.mode.decrypt(self.cipher.cipher, ciphertext)
+
+    # def cipher(self, data: bytes) -> bytes:
+    #     return Cipher(data, self.cipher.round_number, KeyExpansion(self.key))
+    #
+    # def inv_cipher(self, data: bytes) -> bytes:
+    #     return InvCipher(data, self.cipher.round_number, KeyExpansion(self.key))
 
 
-def ShiftRows(state: State) -> State:
-    # §5.1.2
-    res = copy.deepcopy(state)
-    for r in range(4):
-        for c in range(4):
-            res[r, c] = state[r, (c + r) % 4]
-    return res
-
-
-def InvShiftRows(state: State) -> State:
-    # §5.3.1
-    res = copy.deepcopy(state)
-    for r in range(4):
-        for c in range(4):
-            res[r, c] = state[r, (c - r) % 4]
-    return res
-
-
-def MixColumns(state: State) -> State:
-    # §5.1.3
-    a = Word([0x02, 0x01, 0x01, 0x03])
-    res = copy.deepcopy(state)
-    for c in range(4):
-        res[0, c] = (XTimesMul(a[0], state[0, c]) ^ XTimesMul(a[3], state[1, c]) ^ XTimesMul(a[2], state[2, c]) ^
-                     XTimesMul(a[1], state[3, c]))
-        res[1, c] = (XTimesMul(a[1], state[0, c]) ^ XTimesMul(a[0], state[1, c]) ^ XTimesMul(a[3], state[2, c]) ^
-                     XTimesMul(a[2], state[3, c]))
-        res[2, c] = (XTimesMul(a[2], state[0, c]) ^ XTimesMul(a[1], state[1, c]) ^ XTimesMul(a[0], state[2, c]) ^
-                     XTimesMul(a[3], state[3, c]))
-        res[3, c] = (XTimesMul(a[3], state[0, c]) ^ XTimesMul(a[2], state[1, c]) ^ XTimesMul(a[1], state[2, c]) ^
-                     XTimesMul(a[0], state[3, c]))
-    return res
-
-
-def InvMixColumns(state: State) -> State:
-    # §5.3.3
-    a = Word([0x0e, 0x09, 0x0d, 0x0b])
-    res = copy.deepcopy(state)
-    for c in range(4):
-        res[0, c] = (XTimesMul(a[0], state[0, c]) ^ XTimesMul(a[3], state[1, c]) ^ XTimesMul(a[2], state[2, c]) ^
-                     XTimesMul(a[1], state[3, c]))
-        res[1, c] = (XTimesMul(a[1], state[0, c]) ^ XTimesMul(a[0], state[1, c]) ^ XTimesMul(a[3], state[2, c]) ^
-                     XTimesMul(a[2], state[3, c]))
-        res[2, c] = (XTimesMul(a[2], state[0, c]) ^ XTimesMul(a[1], state[1, c]) ^ XTimesMul(a[0], state[2, c]) ^
-                     XTimesMul(a[3], state[3, c]))
-        res[3, c] = (XTimesMul(a[3], state[0, c]) ^ XTimesMul(a[2], state[1, c]) ^ XTimesMul(a[1], state[2, c]) ^
-                     XTimesMul(a[0], state[3, c]))
-    return res
-
-
-def AddRoundKey(state: State, round_keys: list[Word]) -> State:
-    assert len(round_keys) == 4
-    res = copy.deepcopy(state)
-    for c in range(4):
-        key = round_keys[c]
-        res[0, c] = state[0, c] ^ key[0]
-        res[1, c] = state[1, c] ^ key[1]
-        res[2, c] = state[2, c] ^ key[2]
-        res[3, c] = state[3, c] ^ key[3]
-    return res
-
-
-def RotWord(word: Word) -> Word:
-    return Word([word[1], word[2], word[3], word[0]])
-
-
-def SubWord(word: Word) -> Word:
-    return Word([SBox.SBox(word[0]), SBox.SBox(word[1]), SBox.SBox(word[2]), SBox.SBox(word[3])])
-
-
-def KeyExpansion(key: bytes) -> list[Word]:
-    # §5.2 Alg. 2
-    Rcon = [
-        None,
-        Word([0x01, 0x00, 0x00, 0x00]),
-        Word([0x02, 0x00, 0x00, 0x00]),
-        Word([0x04, 0x00, 0x00, 0x00]),
-        Word([0x08, 0x00, 0x00, 0x00]),
-        Word([0x10, 0x00, 0x00, 0x00]),
-        Word([0x20, 0x00, 0x00, 0x00]),
-        Word([0x40, 0x00, 0x00, 0x00]),
-        Word([0x80, 0x00, 0x00, 0x00]),
-        Word([0x1b, 0x00, 0x00, 0x00]),
-        Word([0x36, 0x00, 0x00, 0x00])
-    ]
-    Nk, Nr = 4, 10
-    i = 0
-    w: list[Word | None] = [None for _ in range(4 * (Nr + 1))]
-    while i <= Nk - 1:
-        w[i] = Word(list(bytearray(key[4 * i : 4 * i + 4])))
-        i += 1
-    while i <= 4 * Nr + 3:
-        temp = w[i - 1]
-        if i % Nk == 0:
-            temp = SubWord(RotWord(temp)) ^ Rcon[i // Nk]
-        elif Nk > 6 and i % Nk == 4:
-            temp = SubWord(temp)
-        w[i] = w[i - Nk] ^ temp
-        i += 1
-    return w
-
-
-# §5.1 Alg. 1
-def Cipher(data: bytes, rounds: int, round_keys: list[Word]) -> bytes:
-    assert len(data) == 16
-    state = State.from_input_bytes(data)
-    state = AddRoundKey(state, round_keys[:4])
-    for r in range(1, rounds):
-        state = SubBytes(state)
-        state = ShiftRows(state)
-        state = MixColumns(state)
-        state = AddRoundKey(state, round_keys[4 * r: 4 * r + 4])
-    state = SubBytes(state)
-    state = ShiftRows(state)
-    state = AddRoundKey(state, round_keys[4 * rounds: 4 * rounds + 4])
-    return state.output_bytes()
-
-# §5.3 Alg. 3
-def InvCipher(ciphertext: bytes, rounds: int, round_keys: list[Word]) -> bytes:
-    assert len(ciphertext) == 16
-    state = State.from_input_bytes(ciphertext)
-    state = AddRoundKey(state, round_keys[4 * rounds: 4 * rounds + 4])
-    for r in range(rounds - 1, 0, -1):
-        state = InvShiftRows(state)
-        state = InvSubBytes(state)
-        state = AddRoundKey(state, round_keys[4 * r: 4 * r + 4])
-        state = InvMixColumns(state)
-    state = InvShiftRows(state)
-    state = InvSubBytes(state)
-    state = AddRoundKey(state, round_keys[:4])
-    return state.output_bytes()
-
-
-class AES128:
-    Rounds = 10
-    KeyLength = 16
-
-    def __init__(self, key: bytes):
-        assert len(key) == AES128.KeyLength
-        self.__key = key
-
-    def cipher(self, data: bytes) -> bytes:
-        return Cipher(data, AES128.Rounds, KeyExpansion(self.__key))
-
-    def inv_cipher(self, ciphertext: bytes) -> bytes:
-        return InvCipher(ciphertext, AES128.Rounds, KeyExpansion(self.__key))
-
-
-def main():
-    b = 0x57
-    expected = [
-        0xae,
-        0x47,
-        0x8e,
-        0x07,
-        0x0e,
-        0x1c,
-        0x38
-    ]
-    for e in expected:
-        b = XTimes(b)
-        assert b == e
-
-    assert XTimesMul(0x57, 0x13) == 0xfe
-    assert XTimesMul(0x53, 0x53) == XTimesPow(0x53, 2)
-
-    assert SBox.SBox(0) == 0x63, f"{SBox.SBox(0)} == {0x63}"
-    assert SBox.SBox(0x53) == 0xed, f"{SBox.SBox(0x53)} == {0xed}"
-    assert SBox.InvSBox(SBox.SBox(0xed)) == 0xed
-
-    plaintext = bytes.fromhex("6BC1BEE2 2E409F96 E93D7E11 7393172A AE2D8A57 1E03AC9C 9EB76FAC 45AF8E51"
-                              "30C81C46 A35CE411 E5FBC119 1A0A52EF F69F2445 DF4F9B17 AD2B417B E66C3710")
-    key = bytes.fromhex("2B7E1516 28AED2A6 ABF71588 09CF4F3C")
-    aes128 = AES128(key)
-    ecb = modes.ECB(aes128)
-    enc = ecb.encrypt(padding.pad(plaintext, 16))
-    ciphertext = bytes.fromhex("3AD77BB4 0D7A3660 A89ECAF3 2466EF97 F5D3D585 03B9699D E785895A 96FDBAAF"
-                               "43B1CD7F 598ECE23 881B00E3 ED030688 7B0C785E 27E8AD3F 82232071 04725DD4")
-    assert enc == ciphertext
-    dec = ecb.decrypt(enc)
-    assert dec == plaintext
-
-def assert_gcm():
-    key = bytes.fromhex("AD7A2BD03EAC835A6F620FDCB506B345")
-    iv = bytes.fromhex("12153524C0895E81B2C28465")
-    aes128 = AES128(key)
-    A = bytes.fromhex("D609B1F056637A0D46DF998D88E5222A B2C2846512153524C0895E8108000F10"
-                      "1112131415161718191A1B1C1D1E1F202122232425262728292A2B2C2D2E2F30 313233340001")
-    g = gcm.GCM(iv)
-    plaintext = b""
-    enc, tag = g.AuthenticatedEncrypt(aes128, plaintext, A)
-    print(enc.hex(), tag.hex())
-
-    actual_aes128 = AES.new(key, AES.MODE_GCM, nonce=iv)
-    actual_aes128.update(A)
-    c, t = actual_aes128.encrypt_and_digest(plaintext)
-    print(c.hex(), t.hex())
-
-    print(enc == c)
-    print(tag == t)
-
-
-if __name__ == '__main__':
-    main()
-    assert_gcm()
+AES128 = AESCipher("AES128", key_length=16, round_number=10)
