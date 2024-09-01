@@ -98,7 +98,7 @@ def root_mod(a: int, p: int) -> int:
 
 
 class ECPoint:
-    O = None
+    O = "Origin"
 
     def __init__(self, param: ECParameter, x: int, y: int):
         self.__param = param
@@ -197,6 +197,43 @@ secp256r1 = ECParameter(
     0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551,
     0x1
 )
+Curve25519 = ECParameter(
+    "Curve25519",
+    0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed,
+    0x76d06,
+    0x01,
+    0x09,
+    0x20ae19a1b8a086b4e01edd2c7748d14c923d4d7e6d7c61b229e9c5a27eced3d9,
+    0x1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed,
+    0x08
+)
+
+class X25519:
+    @classmethod
+    def decodeLittleEndian(cls, b):
+        return sum([b[i] << 8 * i for i in range((255 + 7) // 8)])
+
+    @classmethod
+    def decodeUCoordinate(cls, u):
+        u_list = [ord(b) for b in u]
+        # Ignore any unused bits.
+        if 255 % 8:
+            u_list[-1] &= (1 << (255 % 8)) - 1
+        return cls.decodeLittleEndian(u_list)
+
+    @classmethod
+    def encodeUCoordinate(cls, u):
+        u = u % ((2 ** 255) - 19)
+        return ''.join([chr((u >> 8*i) & 0xff)
+                        for i in range((255+7)//8)])
+
+    @classmethod
+    def decodeScalar25519(cls, k):
+        k_list = [ord(b) for b in k]
+        k_list[0] &= 248
+        k_list[31] &= 127
+        k_list[31] |= 64
+        return cls.decodeLittleEndian(k_list)
 
 
 # RFC5915
@@ -259,8 +296,9 @@ class ECDSA:
 
 
 def main():
-    E = EC(secp256r1)
+    E = EC(Curve25519)
     print(E.random_point())
+    E = EC(secp256r1)
     ecdsa = ECDSA(E)
     pub, key = ecdsa.generate_key()
     print(pub, key)

@@ -192,3 +192,4 @@ class __Model2(TLSObject):
 if __name__ == '__main__':
     print(__Model2.parse(BytesReader(b"\xff\x03" + b'\x00\x05\x03\xff\xff\xff\x05hello')))
     print(__Model2(a=65283, b=_Model(a=5, b=[b'\xff', b'\xff', b'\xff'], c='hello')).unparse())
+

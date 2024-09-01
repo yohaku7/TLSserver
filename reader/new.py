@@ -180,7 +180,7 @@ def _to_bytes(obj, byte_length: int, variable: bool) -> bytes:
         return _primitive_to_bytes(obj, byte_length, variable)
     elif issubclass(obj_type, IntEnum):
         byte_length = byte_length if not variable else 0
-        return long_to_bytes(obj.value, byte_length)
+        return long_to_bytes(obj.__value, byte_length)
     elif isinstance(obj, TLSObject):
         return obj.unparse()
     # if obj_type is int:
