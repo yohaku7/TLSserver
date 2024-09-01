@@ -4,11 +4,11 @@ from common import NamedGroup, ContentType
 from crypto import elliptic
 from crypto.aes import AES128
 from crypto.gcm import GCM
+from crypto.x25519 import X25519, X25519PublicKey
 from extension.key_share import KeyShareEntry
 from handshake import ClientHello, ServerHello, Handshake
 from reader import Blocks, Block
 
-from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PublicKey, X25519PrivateKey
 from cryptography.hazmat.primitives.hmac import HMAC, hashes
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography import x509
@@ -21,9 +21,7 @@ SHA256_HASH_LEN: int = 32
 class TLSKey:
     def __init__(self):
         self.x25519_shared_key: bytes | None = None
-        self.client_x25519_public_key: X25519PublicKey | None = None
-        self.server_x25519_private_key: X25519PrivateKey | None = None
-        self.server_x25519_public_key: X25519PublicKey | None = None
+        self.x25519: X25519 | None = None
         self.binder_key: bytes | None = None
         self.client_early_traffic_secret: bytes | None = None
         self.early_exporter_master_secret: bytes | None = None
@@ -46,10 +44,9 @@ class TLSKey:
 
     def exchange_key_x25519(self, entry: KeyShareEntry):
         assert entry.group == NamedGroup.x25519
-        self.client_x25519_public_key = X25519PublicKey.from_public_bytes(entry.key_exchange)
-        self.server_x25519_private_key = X25519PrivateKey.generate()
-        self.server_x25519_public_key = self.server_x25519_private_key.public_key()
-        self.x25519_shared_key = self.server_x25519_private_key.exchange(self.client_x25519_public_key)
+        client_x25519_public_key = X25519PublicKey.from_bytes(entry.key_exchange)
+        self.x25519 = X25519()
+        self.x25519_shared_key = self.x25519.exchange(client_x25519_public_key)
 
     def derive_secrets(self, psk: bytes | None, ch: ClientHello, sh: ServerHello):
         if psk is None:

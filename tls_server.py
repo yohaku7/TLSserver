@@ -201,7 +201,7 @@ class TLSServer:
                                             KeyShareServerHello(
                                                 server_share=KeyShareEntry(
                                                     group=NamedGroup.x25519,
-                                                    key_exchange=self.__key.server_x25519_public_key.public_bytes_raw()
+                                                    key_exchange=self.__key.x25519.public_key.encode()
                                                 )
                                             ).unparse()
                                         )
