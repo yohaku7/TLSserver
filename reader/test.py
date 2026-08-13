@@ -1,7 +1,9 @@
-import pytest
-from reader import BytesReader, new
 from dataclasses import dataclass
-from reader.new import BytesConverter, BytesConvertable
+
+import pytest
+
+from reader import BytesReader, new
+from reader.new import BytesConvertable, BytesConverter
 
 
 @dataclass(frozen=True)

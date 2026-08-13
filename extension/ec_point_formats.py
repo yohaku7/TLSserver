@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-
-from tls_object import TLSIntEnum
 from enum import IntEnum
 
 from reader import new
+from tls_object import TLSIntEnum
+
 from .extension_data import ExtensionReply
 
 __all__ = ["ECPointFormats"]

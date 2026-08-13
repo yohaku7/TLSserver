@@ -1,7 +1,7 @@
 # AES Tests
 # Refer: NIST FIPS197 (https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf)
-from ..aes import AESAlgorithm, SBox, AES128, AES192, AES256
-from ..modes import ECB, CBC
+from ..aes import AES128, AES192, AES256, AESAlgorithm, SBox
+from ..modes import CBC, ECB
 
 
 def test_xTimes():

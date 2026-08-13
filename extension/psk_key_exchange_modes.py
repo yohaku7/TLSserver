@@ -1,8 +1,8 @@
-from tls_object import TLSIntEnum
-from reader import new
 from dataclasses import dataclass
 from enum import IntEnum
 
+from reader import new
+from tls_object import TLSIntEnum
 
 # Reference: RFC8446 §4.2.9
 

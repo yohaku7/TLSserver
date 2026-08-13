@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 
-from reader import new, BytesReader
 from common import HandshakeType
+from reader import BytesReader, new
+
 from .extension_data import ExtensionReply
 
 

@@ -1,7 +1,8 @@
 # -*- coding: UTF-8 -*-
-from reader import Blocks, Block
 from dataclasses import dataclass, field
+
 from common import HandshakeType
+from reader import Block, Blocks
 
 
 # TODO; 複数のホスト名にも対応する。

@@ -5,8 +5,9 @@ import types
 import typing
 from dataclasses import dataclass
 from enum import IntEnum
-from reader import BytesReader
+
 from Crypto.Util.number import long_to_bytes
+from reader import BytesReader
 
 
 class Parsable(metaclass=abc.ABCMeta):

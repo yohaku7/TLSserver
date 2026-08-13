@@ -1,6 +1,7 @@
 from dataclasses import dataclass
+
 from common import ContentType
-from reader import BytesReader, Blocks, Block
+from reader import Block, Blocks, BytesReader
 
 
 @dataclass(frozen=True)

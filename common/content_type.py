@@ -1,5 +1,6 @@
-from tls_object import TLSIntEnum
 from enum import IntEnum
+
+from tls_object import TLSIntEnum
 
 
 class ContentType(TLSIntEnum, IntEnum):

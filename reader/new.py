@@ -4,7 +4,8 @@ import abc
 import types
 import typing
 from dataclasses import dataclass
-from enum import IntEnum, Enum
+from enum import Enum, IntEnum
+
 from Crypto.Util.number import long_to_bytes
 from reader import BytesReader
 

@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from enum import IntEnum
-from tls_object import TLSIntEnum
-from reader import new
 
+from reader import new
+from tls_object import TLSIntEnum
 
 __all__ = ["AlertLevel", "Alert"]
 

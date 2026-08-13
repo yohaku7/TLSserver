@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import secrets
+from dataclasses import dataclass
+
 from .elliptic import Curve25519
 
 

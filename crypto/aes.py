@@ -5,7 +5,6 @@ import copy
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
 
-
 # 参照: NIST FIPS197 (https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.197-upd1.pdf)
 
 @dataclass

@@ -1,19 +1,18 @@
 import math
 
-from common import NamedGroup, ContentType
+from cryptography import x509
+from cryptography.hazmat.primitives.hmac import HMAC, hashes
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+from common import ContentType, NamedGroup
 from crypto import elliptic
 from crypto.aes import AES128
 from crypto.gcm import GCM
+from Crypto.Util.number import long_to_bytes
 from crypto.x25519 import X25519, X25519PublicKey
 from extension.key_share import KeyShareEntry
-from handshake import ClientHello, ServerHello, Handshake
-from reader import Blocks, Block
-
-from cryptography.hazmat.primitives.hmac import HMAC, hashes
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from cryptography import x509
-
-from Crypto.Util.number import long_to_bytes
+from handshake import ClientHello, Handshake, ServerHello
+from reader import Block, Blocks
 
 SHA256_HASH_LEN: int = 32
 

@@ -1,5 +1,6 @@
-from tls_object import TLSIntEnum
 from enum import IntEnum
+
+from tls_object import TLSIntEnum
 
 
 class SignatureScheme(TLSIntEnum, IntEnum):
@@ -47,6 +48,10 @@ class SignatureScheme(TLSIntEnum, IntEnum):
     ecdsa_brainpoolP256r1tls13_sha256 = 0x081a
     ecdsa_brainpoolP384r1tls13_sha384 = 0x081b
     ecdsa_brainpoolP512r1tls13_sha512 = 0x081c
+
+    mldsa44 = 0x0904
+    mldsa65 = 0x0905
+    mldsa87 = 0x0906
 
     @classmethod
     def byte_length(cls) -> int:

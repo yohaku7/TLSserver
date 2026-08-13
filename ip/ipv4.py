@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from enum import Enum, auto
 
-
 __all__ = [
     "IPv4Addr", "IPv4AddrClass",
     "IPv4_LOOPBACK_ADDRESS"

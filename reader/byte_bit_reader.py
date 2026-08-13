@@ -1,8 +1,8 @@
 # -*- coding: UTF-8 -*-
 # written by yohaku7
 from Crypto.Util.number import long_to_bytes
-from ._types import _Base
 
+from ._types import _Base
 
 __all__ = [
     "ByteBitReader"

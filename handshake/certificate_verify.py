@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+
 from common import SignatureScheme
 from reader import new
 

@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+
 from common import NamedGroup
 from reader import new
+
 from .extension_data import ExtensionReply
 
 

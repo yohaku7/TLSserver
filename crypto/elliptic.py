@@ -1,12 +1,14 @@
 # EC (Elliptic Cipher)
 from __future__ import annotations
-import abc, math, secrets
+
+import abc
+import math
+import secrets
 import typing
 from dataclasses import dataclass, field
 
-from Crypto.Util.number import long_to_bytes
-
 from crypto import asn1
+from Crypto.Util.number import long_to_bytes
 
 
 def legendre(a, p) -> int:

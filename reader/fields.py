@@ -1,8 +1,8 @@
+import inspect
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from .bytes_reader import BytesReader
-import inspect
 
 
 @dataclass(frozen=True)

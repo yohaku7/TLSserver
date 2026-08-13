@@ -2,7 +2,6 @@
 # written by yohaku7
 from ._types import _Base
 
-
 __all__ = [
     "BytesReader"
 ]

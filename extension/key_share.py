@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from common import NamedGroup, HandshakeType
-from reader import new, BytesReader
+from common import HandshakeType, NamedGroup
+from reader import BytesReader, new
 
 __all__ = [
     "KeyShare", "KeyShareServerHello", "KeyShareHelloRetryRequest", "KeyShareClientHello",

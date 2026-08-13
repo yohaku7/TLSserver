@@ -1,27 +1,29 @@
 # -*- coding: UTF-8 -*-
+import hashlib
+import secrets
 import socket
 
+import hexdump
 from cryptography.hazmat.primitives._serialization import Encoding
 
 from alert import Alert
 from alert.alert import AlertDescription, AlertLevel
+from common import (ContentType, ExtensionType, HandshakeType, NamedGroup,
+                    SignatureScheme)
+from crypto import HandshakeContext, TLSKey, elliptic
 from crypto.elliptic import ECPrivateKey
-from extension.key_share import KeyShareClientHello, KeyShareServerHello, KeyShareEntry
-from extension.psk_key_exchange_modes import PskKeyExchangeMode
 from extension.extension_parser import ExtensionHeader, extensions
+from extension.key_share import (KeyShareClientHello, KeyShareEntry,
+                                 KeyShareServerHello)
+from extension.psk_key_exchange_modes import PskKeyExchangeMode
 from extension.supported_versions import SupportedVersionsServerHello
-from handshake import Handshake, CipherSuite, EncryptedExtensions
+from handshake import (CipherSuite, ClientHello, EncryptedExtensions,
+                       Handshake, ServerHello)
 from handshake.certificate import Certificate
 from handshake.certificate_verify import CertificateVerify
 from handshake.finished import Finished
-from reader import BytesReader, Blocks, Block
-from record import TLSPlaintext, TLSCiphertext
-from handshake import ClientHello, ServerHello
-from common import ContentType, HandshakeType, ExtensionType, NamedGroup, SignatureScheme
-
-import secrets
-import hashlib
-from crypto import TLSKey, HandshakeContext, elliptic
+from reader import Block, Blocks, BytesReader
+from record import TLSCiphertext, TLSPlaintext
 from record.tls_inner_plaintext import TLSInnerPlaintext
 
 
@@ -65,12 +67,17 @@ class TLSServer:
         ]).parse(br)
         read_data = br.read_byte(length, "raw")
 
+        hexdump.hexdump(read_data)
+
         match content_type:
             case ContentType.handshake:
                 handshake: Handshake = Handshake.from_bytes(read_data)
                 match handshake.msg_type:
                     case HandshakeType.client_hello:
                         print(": ClientHello")
+
+                        hexdump.hexdump(handshake.msg)
+
                         ch: ClientHello = ClientHello.from_bytes(handshake.msg)
                         self.__handshake_ctx.append(ch)
 

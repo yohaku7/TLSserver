@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+
 from reader import new
 
 __all__ = ["RecordSizeLimit"]

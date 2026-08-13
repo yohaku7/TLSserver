@@ -1,13 +1,14 @@
-from common import ContentType
 from dataclasses import dataclass
+
+from common import ContentType
 from reader import new
 
 __all__ = ["TLSPlaintext"]
 
-from .tls_record_obj import TLSRecordObj
-from handshake import Handshake
 from alert import Alert
+from handshake import Handshake
 
+from .tls_record_obj import TLSRecordObj
 
 content_types: dict[type[TLSRecordObj], ContentType] = {
     Handshake: ContentType.handshake,

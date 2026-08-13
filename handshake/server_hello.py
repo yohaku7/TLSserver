@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 
-from extension.extension_parser import ExtensionHeader
-from .cipher_suite import CipherSuite
 from common import HandshakeType
+from extension.extension_parser import ExtensionHeader
 from reader import new
+
+from .cipher_suite import CipherSuite
 
 __all__ = ["ServerHello"]
 

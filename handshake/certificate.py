@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
 from common import HandshakeType
-from reader import new
 from extension.extension_parser import ExtensionHeader
+from reader import new
 
 
 @dataclass(frozen=True)

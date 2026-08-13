@@ -1,5 +1,6 @@
-from common import ContentType
 from dataclasses import dataclass
+
+from common import ContentType
 from reader import new
 
 

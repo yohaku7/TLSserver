@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from reader.new import BytesConverter, BytesConvertable
+
 from reader import new
+from reader.new import BytesConvertable, BytesConverter
 
 
 @dataclass(frozen=True)

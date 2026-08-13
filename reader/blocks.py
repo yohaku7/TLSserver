@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import enum
-from typing import Callable
 from dataclasses import dataclass, field, is_dataclass
+from typing import Callable
+
 from Crypto.Util.number import long_to_bytes
-from ._types import *
-from .ctx import _ContextBase
 from tls_object import TLSIntEnum
+
+from ._types import *
 from .bytes_reader import BytesReader
+from .ctx import _ContextBase
 from .fields import _TLSField
 
 type _BlockKind = Block | ListBlock | RestBlock | EnumBlock | EnumListBlock | Blocks | BlocksLoop | _TLSField
