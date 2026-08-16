@@ -8,6 +8,9 @@ from reader import new
 class SignatureAlgorithms(new.TLSObject):
     supported_signature_algorithms: list[SignatureScheme]
 
+    def reply(self) -> None:
+        assert SignatureScheme.ecdsa_secp256r1_sha256 in self.supported_signature_algorithms
+
     @classmethod
     def _get_lengths(cls) -> list[int | tuple | None]:
         return [

@@ -12,6 +12,7 @@ dependencies = [
     "pycairo==1.29.1",
     "pycparser==3.0",
     "pycryptodome>=3.23.0",
+    "pytest>=9.1.1",
     "setuptools==84.0.0",
     "wheel==0.47.0",
 ]

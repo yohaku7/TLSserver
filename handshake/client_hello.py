@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from common import HandshakeType
 from extension.extension_parser import ExtensionHeader
 from reader import new
-
 from .cipher_suite import CipherSuite
 
 __all__ = ["ClientHello"]
@@ -32,15 +31,3 @@ class ClientHello(new.TLSObject):
                 "handshake_type": HandshakeType.client_hello,
             })
         ]
-
-    # def unparse(self):
-    #     ext_raw = ExtensionParser.unparse(self.extensions, HandshakeType.client_hello)
-    #     return ClientHello.blocks.unparse(self.legacy_version,
-    #                                       self.random,
-    #                                       self.legacy_session_id,
-    #                                       self.cipher_suites,
-    #                                       self.legacy_compression_methods,
-    #                                       ext_raw)
-
-
-# ClientHello.blocks.after_parse_factory = ClientHello

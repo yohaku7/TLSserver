@@ -160,7 +160,11 @@ def _parse_primitive[T](data: bytes, primitive_type: T) -> T | None:
     elif primitive_type is bytearray:
         return bytearray(data)
     elif issubclass(primitive_type, IntEnum):
-        return primitive_type(int.from_bytes(data))
+        value = int.from_bytes(data)
+        if value in primitive_type:
+            return primitive_type(value)
+        else:
+            return value
     raise ValueError(f"パースできません。 type: {primitive_type}")
 
 
@@ -262,7 +266,10 @@ class TLSObject(BytesConvertable):
                 if isinstance(t_param, TLSObject):
                     return list(map(lambda x: t_param.from_bytes(x, **add_data), raw))
                 else:
-                    return list(map(lambda x: _parse_primitive(x, t_param), raw))
+                    # 未知の値を無視する
+                    l = list(map(lambda x: _parse_primitive(x, t_param), raw))
+                    l = list(filter(lambda x: type(x) != int, l))
+                    return l
             else:
                 print(f"len: {length}, variable: {variable}, split: {split}, t_anno: {type_annotation}")
                 raise TypeError(f"raw: {raw} type: {type(raw)}")

@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives._serialization import Encoding
 from alert import Alert
 from alert.alert import AlertDescription, AlertLevel
 from common import (ContentType, ExtensionType, HandshakeType, NamedGroup,
-                    SignatureScheme)
+                    SignatureScheme, ProtocolVersion)
 from crypto import HandshakeContext, TLSKey, elliptic
 from crypto.elliptic import ECPrivateKey
 from extension.extension_parser import ExtensionHeader, extensions
@@ -22,7 +22,7 @@ from handshake import (CipherSuite, ClientHello, EncryptedExtensions,
 from handshake.certificate import Certificate
 from handshake.certificate_verify import CertificateVerify
 from handshake.finished import Finished
-from reader import Block, Blocks, BytesReader
+from reader import Block, Blocks, BytesReader, StreamReader
 from record import TLSCiphertext, TLSPlaintext
 from record.tls_inner_plaintext import TLSInnerPlaintext
 
@@ -32,19 +32,16 @@ class TLSServer:
         self.__sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.__sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # 接続の高速化
         self.__sock.bind((dst, ip))
+        self.__sock.listen(1)
         self.__conn = None
         self.__key = TLSKey()
         self.__handshake_ctx = HandshakeContext([])
         self.handshake_finished = False
 
-    def __del__(self):
-        self.close()
-
     def close(self):
         self.__sock.close()
 
     def accept_and_recv(self):
-        self.__sock.listen(1)
         conn, addr = self.__sock.accept()
         self.__conn = conn
         print(f"接続：{addr}")
@@ -52,11 +49,118 @@ class TLSServer:
         return data
 
     def send(self, data: bytes):
-        self.__conn.send(data)
+        self.__sock.sendall(data)
 
     def recv(self):
         data = self.__conn.recv(65565)
         return data
+
+    def parse_stream(self):
+        sock, addr = self.__sock.accept()
+        sr = StreamReader(sock)
+
+        while True:
+            if not self.handshake_finished:
+                # 暗号化されていない Record 層の処理
+                content_type = ContentType(sr.read_int(1))
+                legacy_record_version = sr.read_int(2)
+                length = sr.read_int(2)
+
+                # 高レベルのプロトコルの処理
+                match content_type:
+                    case ContentType.handshake:
+                        # Handshake の処理
+                        msg_type = HandshakeType(sr.read_int(1))
+                        length = sr.read_int(3)
+                        data = sr.read(length)
+                        match msg_type:
+                            case HandshakeType.client_hello:
+                                print(f"=> Handshake, Client Hello ({length} bytes)")
+                                hexdump.hexdump(data)
+
+                                ch: ClientHello = ClientHello.from_bytes(data)
+                                self.__handshake_ctx.append(ch)
+
+                                data = b""
+
+                                sh = self.make_server_hello(ch)
+                                self.__handshake_ctx.append(sh)
+                                handshake = Handshake.make(sh)
+                                new_tls_plaintext = TLSPlaintext.make(handshake)
+                                data += TLSPlaintext.unparse(new_tls_plaintext)
+
+                                # make encrypted_extensions
+                                self.__key.derive_secrets(None, ch, sh)
+                                ee = self.make_encrypted_extensions()
+                                data += TLSCiphertext.unparse(ee)
+                                self.__key.seq_upd_server()
+
+                                # make certificate
+                                certificate = self.make_certificate()
+                                data += TLSCiphertext.unparse(certificate)
+                                self.__key.seq_upd_server()
+
+                                # make certificate_verify
+                                cv = self.make_certificate_verify()
+                                data += TLSCiphertext.unparse(cv)
+                                self.__key.seq_upd_server()
+
+                                # make finished
+                                finished = self.make_finished()
+                                data += TLSCiphertext.unparse(finished)
+                                self.__key.seq_upd_server()
+
+                                sock.sendall(data)
+                    case ContentType.alert:
+                        print(f"=> Alert ({length} bytes)")
+                        data = sr.read(length)
+                        alert = Alert.from_bytes(data)
+                        print(alert)
+                        print("Exit.")
+                        exit(1)
+                    case ContentType.change_cipher_spec:
+                        print(f"=> Change Cipher Spec ({length} bytes)")
+                        data = sr.read(length)
+                        hexdump.hexdump(data)
+                        print("this server will ignore this.")
+                    case ContentType.application_data:
+                        print(f"=> Application Data ({length} bytes)")
+                        data = sr.read(length)
+                        hexdump.hexdump(data)
+                        decrypted = self.__key.decrypt_handshake(data, ContentType.application_data, 0x0303, length)
+                        tls_inner_plaintext = TLSInnerPlaintext.from_bytes(decrypted)
+                        handshake = Handshake.from_bytes(tls_inner_plaintext.content)
+                        self.check_client_finished(handshake.msg)
+                        self.handshake_finished = True
+                        self.__key.make_application_key(self.__handshake_ctx.handshakes, Finished(handshake.msg))
+                    case _:
+                        raise ValueError
+            else:
+                # 暗号化された Record 層の処理
+                content_type = ContentType(sr.read_int(1))
+                assert content_type == ContentType.application_data
+
+                legacy_record_version = sr.read_int(2)
+                assert legacy_record_version == 0x0303
+
+                length = sr.read_int(2)
+
+                data = sr.read(length)
+                hexdump.hexdump(data)
+                received = self.parse_application_data(data, sock)
+
+                if received:
+                    print(f"受信: {received.decode()}")
+                    self.send_application_data(received, sock)
+
+                print()
+                print("------------------- Next --------------------")
+                print()
+
+    def reset(self):
+        self.handshake_finished = False
+        self.__handshake_ctx = HandshakeContext([])
+        self.__key = TLSKey()
 
     def parse(self, data: bytes):
         br = BytesReader(data)
@@ -67,46 +171,14 @@ class TLSServer:
         ]).parse(br)
         read_data = br.read_byte(length, "raw")
 
-        hexdump.hexdump(read_data)
+        # hexdump.hexdump(read_data)
 
         match content_type:
             case ContentType.handshake:
                 handshake: Handshake = Handshake.from_bytes(read_data)
                 match handshake.msg_type:
                     case HandshakeType.client_hello:
-                        print(": ClientHello")
-
-                        hexdump.hexdump(handshake.msg)
-
-                        ch: ClientHello = ClientHello.from_bytes(handshake.msg)
-                        self.__handshake_ctx.append(ch)
-
-                        sh = self.make_server_hello(ch)
-                        self.__handshake_ctx.append(sh)
-                        handshake = Handshake.make(sh)
-                        new_tls_plaintext = TLSPlaintext.make(handshake)
-                        self.send(TLSPlaintext.unparse(new_tls_plaintext))
-
-                        # make encrypted_extensions
-                        self.__key.derive_secrets(None, ch, sh)
-                        ee = self.make_encrypted_extensions()
-                        self.send(TLSCiphertext.unparse(ee))
-                        self.__key.seq_upd_server()
-
-                        # make certificate
-                        certificate = self.make_certificate()
-                        self.send(TLSCiphertext.unparse(certificate))
-                        self.__key.seq_upd_server()
-
-                        # make certificate_verify
-                        cv = self.make_certificate_verify()
-                        self.send(TLSCiphertext.unparse(cv))
-                        self.__key.seq_upd_server()
-
-                        # make finished
-                        finished = self.make_finished()
-                        self.send(TLSCiphertext.unparse(finished))
-                        self.__key.seq_upd_server()
+                        self.parse_client_hello()
             case ContentType.alert:
                 print(": Alert")
                 alert = Alert.from_bytes(read_data)
@@ -129,26 +201,28 @@ class TLSServer:
         if br.rest_length != 0:
             self.parse(br.rest_bytes())
 
-    def parse_application_data(self, data: bytes) -> bytes:
+    def parse_application_data(self, data: bytes, sock) -> bytes:
         decrypted = self.__key.decrypt_application_data(data, ContentType.application_data,
                                                         0x0303, len(data))
         tls_inner_plaintext = TLSInnerPlaintext.from_bytes(decrypted)
         match tls_inner_plaintext.type:
             case ContentType.application_data:
+                print("=> Application Data (Encrypted)")
                 return tls_inner_plaintext.content
             case ContentType.alert:
+                print("=> Alert (Encrypted)")
+                hexdump.hexdump(tls_inner_plaintext.content)
                 alert = Alert.from_bytes(tls_inner_plaintext.content)
-                print(alert)
                 if alert.description == AlertDescription.close_notify:
                     close_notify = Alert(AlertLevel.warning, AlertDescription.close_notify)
-                    self.send_application_data(close_notify.unparse())
+                    self.send_application_data(close_notify.unparse(), sock)
                     print("接続終了。")
-                    exit(0)
-                print("Exit.")
-                exit(1)
+                else:
+                    print("Exit.")
+                    exit(1)
         self.__key.seq_upd_server()
 
-    def send_application_data(self, data: bytes):
+    def send_application_data(self, data: bytes, sock):
         tls_inner_plaintext = TLSInnerPlaintext(data, ContentType.application_data, b"")
         tls_ciphertext_len = len(tls_inner_plaintext.unparse()) + 16
         encrypted, tag = self.__key.encrypt_application_data(tls_inner_plaintext.unparse(),
@@ -160,7 +234,7 @@ class TLSServer:
             ContentType.application_data, 0x0303, len(encrypted),
             encrypted
         )
-        self.send(tls_ciphertext.unparse())
+        sock.send(tls_ciphertext.unparse())
         self.__key.seq_upd_client()
 
     def make_server_hello(self, client_hello: ClientHello) -> ServerHello:
@@ -185,11 +259,11 @@ class TLSServer:
                 except:
                     match ext.type:
                         case ExtensionType.supported_versions:
-                            assert 0x0304 in content.version
+                            assert ProtocolVersion.TLS_1_3 in content.version
                             server_extensions.append(
                                 ExtensionHeader(
                                     ExtensionType.supported_versions,
-                                    SupportedVersionsServerHello(0x0304).unparse()
+                                    SupportedVersionsServerHello(ProtocolVersion.TLS_1_3).unparse()
                                 )
                             )
                         case ExtensionType.psk_key_exchange_modes:
@@ -201,6 +275,7 @@ class TLSServer:
                             for e in client_hello.extensions:
                                 if e.type == ExtensionType.key_share:
                                     con = KeyShareClientHello.from_bytes(e.content)
+                                    print(con.client_shares)
                                     self.__key.exchange_key_x25519(con.client_shares[0])
                                     server_extensions.append(
                                         ExtensionHeader(
@@ -216,7 +291,7 @@ class TLSServer:
                         case _:
                             continue
             else:
-                raise ValueError(f"Extensionを処理できません。 名前：{content.__class__.__name__}")
+                print(f"Extensionを処理できません。{ext}")
         return ServerHello(
             legacy_version, random,
             legacy_session_id_echo, cipher_suite,
@@ -289,28 +364,13 @@ class TLSServer:
 
 
 def main():
-    server = TLSServer()
-    data = server.accept_and_recv()
+    server = TLSServer(ip=4433)
     while True:
-        server.parse(data)
-        if server.handshake_finished:
-            print("HANDSHAKE FINISHED!")
-            break
-        else:
-            print()
-            print("------------------- Next --------------------")
-            print()
-            data = server.recv()
-    while True:
-        data = server.recv()
-        tls_ciphertext = TLSCiphertext.from_bytes(data)
-        received = server.parse_application_data(tls_ciphertext.encrypted_record)
-        print(f"受信: {received.decode()}")
-        server.send_application_data(received)
-        print()
-        print("------------------- Next --------------------")
-        print()
-
+        try:
+            server.parse_stream()
+        except EOFError:
+            server.reset()
+            continue
 
 if __name__ == '__main__':
     main()

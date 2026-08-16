@@ -1,9 +1,13 @@
 # -*- coding: UTF-8 -*-
 # written by yohaku7
+import socket
+from typing import Literal
+
 from ._types import _Base
 
 __all__ = [
-    "BytesReader"
+    "BytesReader",
+    "StreamReader",
 ]
 
 
@@ -72,3 +76,49 @@ class BytesReader:
             raise ValueError("0byte以上の数値を指定してください。")
         if self.__length < self.__next_pos + n:
             raise EOFError("これ以上読み進められません。")
+
+
+class StreamReader:
+    """ストリームからバイト列を読むクラス。"""
+    def __init__(self, sock: socket.socket):
+        self.__sock = sock
+        self.__buffer = bytearray()
+
+    def __recv(self, n: int):
+        while len(self.__buffer) < n:
+            chunk = self.__sock.recv(4096)
+
+            if not chunk:
+                raise EOFError("socket closed.")
+
+            self.__buffer.extend(chunk)
+
+    def read(self, n: int) -> bytes:
+        """n バイトを読む。"""
+        self.__recv(n)
+
+        res = bytes(self.__buffer[:n])
+        self.__buffer = self.__buffer[n:]
+
+        return res
+
+    def read_int(self, n: int, endian: Literal["little", "big"] = "big") -> int:
+        """n バイトを読み、整数値として返す。"""
+        return int.from_bytes(self.read(n), endian)
+
+    def read_variable_length(self, length_header_size: int) -> bytes:
+        """可変長ベクトルの長さを読み、本体を読む"""
+        vector_len = int.from_bytes(self.read(length_header_size))
+        if vector_len == 0:  # 空ベクトル
+            return b""
+        res = self.read(vector_len)
+        return res
+
+    def read_variable_length_per(self, length_header_size: int, per: int, base: _Base) \
+            -> list[bytes]:
+        raw = self.read_variable_length(length_header_size)
+        res = []
+        for i in range(0, len(raw), per):
+            content = raw[i : i + per]
+            res.append(content)
+        return res

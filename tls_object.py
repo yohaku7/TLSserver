@@ -38,7 +38,7 @@ class TLSObject(ABC):
 #         raise NotImplementedError
 
 
-class TLSIntEnum[T]:
+class TLSIntEnum:
     @classmethod
     def byte_length(cls) -> int:
         """Enumのバイトサイズ"""
