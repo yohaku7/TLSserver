@@ -3,8 +3,6 @@ from dataclasses import dataclass
 from common import HandshakeType, ProtocolVersion
 from reader import BytesReader, new
 
-from .extension_data import ExtensionReply
-
 
 @dataclass(frozen=True)
 class SupportedVersionsClientHello(new.TLSObject):
@@ -46,8 +44,3 @@ class SupportedVersions:
         res = cls.parse(br, **additional_data)
         assert br.rest_length == 0
         return res
-
-    def reply(self) -> ExtensionReply:
-        assert ProtocolVersion.TLS_1_3 in self.version  # TLS 1.3
-        return ExtensionReply("Supported Version: 0x0304 (TLS 1.3)",
-                              SupportedVersionsServerHello(ProtocolVersion.TLS_1_3))

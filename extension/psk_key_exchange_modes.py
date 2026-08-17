@@ -25,6 +25,3 @@ class PskKeyExchangeModes(new.TLSObject):
         return [
             (1, True)
         ]
-
-    def reply(self):
-        assert self.ke_modes == PskKeyExchangeMode.psk_dhe_ke

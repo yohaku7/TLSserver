@@ -4,8 +4,6 @@ from enum import IntEnum
 from reader import new
 from tls_object import TLSIntEnum
 
-from .extension_data import ExtensionReply
-
 __all__ = ["ECPointFormats"]
 
 
@@ -31,7 +29,3 @@ class ECPointFormats(new.TLSObject):
         return [
             (1, True, 1),
         ]
-
-    def reply(self) -> ExtensionReply:
-        assert ECPointFormat.uncompressed in self.ec_point_formats
-        return ExtensionReply(f"ECPointFormat: {ECPointFormat.uncompressed}")
