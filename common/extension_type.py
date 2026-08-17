@@ -11,7 +11,7 @@ class ExtensionType(IntEnum):
     signature_algorithms = 13
     use_srtp = 14
     heartbeat = 15
-    application_layer_protocol_negotiation = 16
+    application_layer_protocol_negotiation = 16  # RFC7301
     signed_certificate_timestamp = 18
     client_certificate_type = 19
     server_certificate_type = 20

@@ -12,7 +12,8 @@ def run_aes128_test(key: bytes, iv: bytes,
     c, t = gcm.encrypt(authenticated_data, plaintext, 16)
     assert c == ciphertext
     assert t == tag
-    p = gcm.decrypt(authenticated_data, ciphertext, tag)
+    p, valid = gcm.decrypt(authenticated_data, ciphertext, tag)
+    assert valid
     assert p == plaintext
 
 
@@ -23,7 +24,8 @@ def run_aes192_test(key: bytes, iv: bytes,
     c, t = gcm.encrypt(authenticated_data, plaintext, 16)
     assert c == ciphertext
     assert t == tag
-    p = gcm.decrypt(authenticated_data, ciphertext, tag)
+    p, valid = gcm.decrypt(authenticated_data, ciphertext, tag)
+    assert valid
     assert p == plaintext
 
 

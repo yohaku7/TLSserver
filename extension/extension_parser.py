@@ -8,6 +8,7 @@ from .ec_point_formats import ECPointFormats
 from .encrypt_then_mac import EncryptThenMAC
 from .extended_master_secret import ExtendedMasterSecret
 from .key_share import KeyShare
+from .pre_shared_key import PreSharedKey
 from .psk_key_exchange_modes import PskKeyExchangeModes
 from .record_size_limit import RecordSizeLimit
 from .renegotiation_info import RenegotiationInfo
@@ -35,6 +36,7 @@ extensions: dict[ExtensionType, type[new.TLSObject]] = {
     ExtensionType.extended_master_secret: ExtendedMasterSecret,
     ExtensionType.psk_key_exchange_modes: PskKeyExchangeModes,
     ExtensionType.record_size_limit: RecordSizeLimit,
+    ExtensionType.pre_shared_key: PreSharedKey,
 }
 
 

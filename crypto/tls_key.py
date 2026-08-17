@@ -1,4 +1,5 @@
 import math
+import secrets
 
 from cryptography import x509
 from cryptography.hazmat.primitives.hmac import HMAC, hashes
@@ -9,12 +10,98 @@ from crypto import elliptic
 from crypto.aes import AES128
 from crypto.gcm import GCM
 from Crypto.Util.number import long_to_bytes
+
+from crypto.modes import CBC
 from crypto.x25519 import X25519, X25519PublicKey
 from extension.key_share import KeyShareEntry
 from handshake import ClientHello, Handshake, ServerHello
-from reader import Block, Blocks
+from reader import Block, Blocks, BytesReader
 
 SHA256_HASH_LEN: int = 32
+
+
+class SessionTicket:
+    def __init__(self):
+        self.key_id: int = 0
+
+        with open("./temp/stek.key", mode="rb") as f:
+            self.stek_master_key = f.read()
+        self.stek_iv = secrets.token_bytes(16)
+        self.stek_master_key = SessionTicket.HKDF_Extract(long_to_bytes(0, SHA256_HASH_LEN), self.stek_master_key)
+
+        self.stek_key = SessionTicket.HKDF_Expand(self.stek_master_key, b"stek psk enc", 16)
+        self.hmac_key = SessionTicket.HKDF_Expand(self.stek_master_key, b"stek hmac", SHA256_HASH_LEN)
+
+        self.cbc = CBC(AES128(self.stek_key), self.stek_iv)
+
+    # ticket の構造：
+    # +------------------+---------------+---------------+---------------+
+    # |                  |               |               |               |
+    # | Key ID (4 bytes) | IV (16 bytes) | Encrypted PSK | MAC (SHA-256) |
+    # |                  |               |               |               |
+    # +------------------+---------------+---------------+---------------+
+    def create_ticket(self, psk: bytes) -> bytes:
+        ticket = b""
+        ticket += long_to_bytes(self.key_id, 4)
+        ticket += self.stek_iv
+        psk_encrypted = self.cbc.encrypt(psk)
+        ticket += psk_encrypted
+        mac = SessionTicket.HMAC(self.hmac_key, ticket)
+        ticket += mac
+        self.key_id += 1
+        return ticket
+
+    def verify_ticket(self, ticket: bytes) -> bool:
+        br = BytesReader(ticket)
+        key_id, iv, encrypted, real_mac = Blocks([
+            Block(4, "raw"),
+            Block(16, "raw"),
+            Block(32, "raw"),
+            Block(SHA256_HASH_LEN, "raw"),
+        ]).parse(br)
+        fragment = key_id + iv + encrypted
+        mac = SessionTicket.HMAC(self.hmac_key, fragment)
+        return mac == real_mac
+
+    def decrypt_psk(self, ticket: bytes) -> bytes:
+        assert self.verify_ticket(ticket)
+        br = BytesReader(ticket)
+        _, _, encrypted, _ = Blocks([
+            Block(4, "raw"),
+            Block(16, "raw"),
+            Block(32, "raw"),
+            Block(SHA256_HASH_LEN, "raw"),
+        ]).parse(br)
+        psk = self.cbc.decrypt(encrypted)
+        return psk
+
+    @staticmethod
+    def HMAC(key: bytes, data: bytes):
+        hmac = HMAC(key, hashes.SHA256())
+        hmac.update(data)
+        return hmac.finalize()
+
+    @staticmethod
+    def HKDF_Extract(salt: bytes, ikm: bytes) -> bytes:
+        # RFC5869 §2.2
+        return SessionTicket.HMAC(salt, ikm)
+
+    @staticmethod
+    def HKDF_Expand(extracted_key: bytes, context: bytes, length: int) -> bytes:
+        # RFC5869 §2.3
+        def _T(n: int):
+            if n == 0:
+                return b""
+            else:
+                hmac = HMAC(extracted_key, hashes.SHA256())
+                hmac.update(_T(n - 1) + context + long_to_bytes(n))
+                return hmac.finalize()
+
+        N = math.ceil(length / SHA256_HASH_LEN)
+        T = b""
+        for n in range(1, N + 1):
+            T += _T(n)
+        return T[:length]
 
 
 class TLSKey:
@@ -207,19 +294,15 @@ class TLSKey:
         self.resumption_master_secret = TLSKey.Derive_Secret(self.master_secret, b"res master",
                                                              *[*handshake_ctx, client_finished])
 
+    def make_psk(self, ticket_nonce: bytes) -> bytes:
+        assert self.resumption_master_secret is not None
+        return TLSKey.HKDF_Expand_Label(self.resumption_master_secret, b"resumption", ticket_nonce, SHA256_HASH_LEN)
+
     def _calc_nonce(self, write_iv: bytes, seq: int):
         # RFC8446 §5.3, RFC5116 §5.1
         iv_length = 12  # RFC5116 §5.1
         seq_bin = long_to_bytes(seq, iv_length)
         return bytes(x1 ^ x2 for x1, x2 in zip(write_iv, seq_bin))
-
-    def seq_upd_server(self):
-        pass
-        # self.seq_server += 1
-
-    def seq_upd_client(self):
-        pass
-        # self.seq_client += 1
 
     @staticmethod
     def load_x509_cert(data_path: str):
