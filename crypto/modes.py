@@ -38,7 +38,7 @@ class AESModeWithIVAndAuthenticatedData(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def decrypt(self, authenticated_data: bytes, ciphertext: bytes, tag: bytes) -> bytes:
+    def decrypt(self, authenticated_data: bytes, ciphertext: bytes, tag: bytes) -> tuple[bytes, bool]:
         pass
 
 

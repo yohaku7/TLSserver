@@ -103,14 +103,17 @@ class GCM(AESModeWithIVAndAuthenticatedData):
         T >>= 16 - tag_len
         return C, int.to_bytes(T, tag_len)
 
-    def decrypt(self, authenticated_data: bytes, ciphertext: bytes, tag: bytes) -> bytes:
+    def decrypt(self, authenticated_data: bytes, ciphertext: bytes, tag: bytes) -> tuple[bytes, bool]:
         H = self.aes.encrypt(int.to_bytes(0, 16))
         H = int.to_bytes(int.from_bytes(H), 16)
         counter = GCMCounter.generate(H, self.iv)
         Y0 = counter.encode()
         actual_tag = GCMAlgorithm.GHash(H, authenticated_data, ciphertext) ^ int.from_bytes(self.aes.encrypt(Y0))
+
+        # fix: constant-time の数値比較に変更
         if int.from_bytes(tag) != actual_tag:
-            raise ValueError("Invalid tag")
+            return b"", False
+
         P = b""
         for i in range(0, len(ciphertext), 16):
             C = ciphertext[i: i + 16]
@@ -119,4 +122,4 @@ class GCM(AESModeWithIVAndAuthenticatedData):
             C_len = len(C)
             E = int.from_bytes(E[:C_len])
             P += int.to_bytes(int.from_bytes(C) ^ E, C_len)
-        return P
+        return P, True

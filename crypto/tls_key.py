@@ -27,8 +27,10 @@ class TLSKey:
         self.client_handshake_traffic_secret: bytes | None = None
         self.server_handshake_traffic_secret: bytes | None = None
 
-        self.seq_server: int = 0
-        self.seq_client: int = 0
+        self.client_application_seq: int = 0
+        self.server_application_seq: int = 0
+        self.client_handshake_seq: int = 0
+        self.server_handshake_seq: int = 0
 
         self.__secret_state: bytes | None = None
 
@@ -134,10 +136,13 @@ class TLSKey:
             long_to_bytes(legacy_record_version) +
              long_to_bytes(length, 2)  # RFC8446 §5.2
         )
-        gcm = GCM(AES128(write_key), self.calc_nonce(write_iv, "server"))
-        return gcm.encrypt(additional_data, data, 16)
+        nonce = self._calc_nonce(write_iv, self.server_handshake_seq)
+        gcm = GCM(AES128(write_key), nonce)
+        encrypted = gcm.encrypt(additional_data, data, 16)
+        self.server_handshake_seq += 1
+        return encrypted
 
-    def decrypt_handshake(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int):
+    def decrypt_handshake(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int) -> tuple[bytes, bool]:
         tag = data[-16:]
         real_data = data[:-16]
         assert self.client_handshake_traffic_secret is not None
@@ -148,8 +153,12 @@ class TLSKey:
             long_to_bytes(legacy_record_version) +
             long_to_bytes(length, 2)  # RFC8446 §5.2
         )
-        gcm = GCM(AES128(write_key), self.calc_nonce(write_iv, "client"))
-        return gcm.decrypt(additional_data, real_data, tag)
+        nonce = self._calc_nonce(write_iv, self.client_handshake_seq)
+        gcm = GCM(AES128(write_key), nonce)
+        decrypted, valid = gcm.decrypt(additional_data, real_data, tag)
+        if valid:
+            self.client_handshake_seq += 1
+        return decrypted, valid
 
     def encrypt_application_data(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int):
         assert self.server_application_traffic_secret[0] is not None
@@ -160,8 +169,11 @@ class TLSKey:
             long_to_bytes(legacy_record_version) +
             long_to_bytes(length, 2)  # RFC8446 §5.2
         )
-        gcm = GCM(AES128(write_key), self.calc_nonce(write_iv, "client"))
-        return gcm.encrypt(additional_data, data, 16)
+        nonce = self._calc_nonce(write_iv, self.server_application_seq)
+        gcm = GCM(AES128(write_key), nonce)
+        encrypted = gcm.encrypt(additional_data, data, 16)
+        self.server_application_seq += 1
+        return encrypted
 
     def decrypt_application_data(self, data: bytes, opaque_type: ContentType, legacy_record_version: int, length: int):
         tag = data[-16:]
@@ -174,8 +186,12 @@ class TLSKey:
             long_to_bytes(legacy_record_version) +
             long_to_bytes(length, 2)  # RFC8446 §5.2
         )
-        gcm = GCM(AES128(write_key), self.calc_nonce(write_iv, "client"))
-        return gcm.decrypt(additional_data, real_data, tag)
+        nonce = self._calc_nonce(write_iv, self.client_application_seq)
+        gcm = GCM(AES128(write_key), nonce)
+        decrypted, valid = gcm.decrypt(additional_data, real_data, tag)
+        if valid:
+            self.client_application_seq += 1
+        return decrypted, valid
 
     def make_application_key(self, handshake_ctx, client_finished):
         self.master_secret = TLSKey.HKDF_Extract(self.__secret_state, b"\00" * 32)
@@ -191,22 +207,19 @@ class TLSKey:
         self.resumption_master_secret = TLSKey.Derive_Secret(self.master_secret, b"res master",
                                                              *[*handshake_ctx, client_finished])
 
-    def calc_nonce(self, write_iv: bytes, side: str):
+    def _calc_nonce(self, write_iv: bytes, seq: int):
         # RFC8446 §5.3, RFC5116 §5.1
         iv_length = 12  # RFC5116 §5.1
-        if side == "server":
-            seq_bin = long_to_bytes(self.seq_server, iv_length)
-        elif side == "client":
-            seq_bin = long_to_bytes(self.seq_client, iv_length)
-        else:
-            raise ValueError("何故かsideが違います。")
+        seq_bin = long_to_bytes(seq, iv_length)
         return bytes(x1 ^ x2 for x1, x2 in zip(write_iv, seq_bin))
 
     def seq_upd_server(self):
-        self.seq_server += 1
+        pass
+        # self.seq_server += 1
 
     def seq_upd_client(self):
-        self.seq_client += 1
+        pass
+        # self.seq_client += 1
 
     @staticmethod
     def load_x509_cert(data_path: str):

@@ -7,6 +7,7 @@ from handshake.certificate_verify import CertificateVerify
 from handshake.client_hello import ClientHello
 from handshake.encrypted_extensions import EncryptedExtensions
 from handshake.finished import Finished
+from handshake.new_session_ticket import NewSessionTicket
 from handshake.server_hello import ServerHello
 from reader import new
 
@@ -20,6 +21,7 @@ handshake_type: dict[type[new.TLSObject], HandshakeType] = {
     Certificate: HandshakeType.certificate,
     CertificateVerify: HandshakeType.certificate_verify,
     Finished: HandshakeType.finished,
+    NewSessionTicket: HandshakeType.new_session_ticket,
 }
 
 
