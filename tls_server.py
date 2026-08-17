@@ -4,6 +4,7 @@ import secrets
 import socket
 
 import hexdump
+from Crypto.Util.number import long_to_bytes
 from cryptography.hazmat.primitives._serialization import Encoding
 
 from alert import Alert
@@ -23,6 +24,7 @@ from handshake import (CipherSuite, ClientHello, EncryptedExtensions,
 from handshake.certificate import Certificate
 from handshake.certificate_verify import CertificateVerify
 from handshake.finished import Finished
+from handshake.new_session_ticket import NewSessionTicket
 from reader import Block, Blocks, BytesReader, StreamReader
 from record import TLSCiphertext, TLSPlaintext
 from record.tls_inner_plaintext import TLSInnerPlaintext
@@ -105,7 +107,6 @@ class TLSServer:
                                         print(f"<= Encrypted Extensions ({len(ee)} bytes) (Encrypted)")
                                         hexdump.hexdump(ee)
                                         data += ee
-                                        self.__key.seq_upd_server()
 
                                         # make certificate
                                         certificate = self.make_certificate()
@@ -113,7 +114,6 @@ class TLSServer:
                                         print(f"<= Certificate ({len(certificate)} bytes) (Encrypted)")
                                         hexdump.hexdump(certificate)
                                         data += certificate
-                                        self.__key.seq_upd_server()
 
                                         # make certificate_verify
                                         cv = self.make_certificate_verify()
@@ -121,7 +121,6 @@ class TLSServer:
                                         print(f"<= Certificate Verify ({len(cv)} bytes) (Encrypted)")
                                         hexdump.hexdump(cv)
                                         data += cv
-                                        self.__key.seq_upd_server()
 
                                         # make finished
                                         finished = self.make_finished()
@@ -129,7 +128,6 @@ class TLSServer:
                                         print(f"<= Finished ({len(finished)} bytes) (Encrypted)")
                                         hexdump.hexdump(finished)
                                         data += finished
-                                        self.__key.seq_upd_server()
 
                                         sock.sendall(data)
                             case ContentType.alert:
@@ -164,12 +162,24 @@ class TLSServer:
                                 data = sr.read(length)
                                 hexdump.hexdump(data)
 
-                                decrypted = self.__key.decrypt_handshake(data, ContentType.application_data, 0x0303, length)
+                                decrypted, valid = self.__key.decrypt_handshake(data, ContentType.application_data, 0x0303, length)
+
+                                if not valid:
+                                    # alert を送信
+                                    print("INVALID TAG!")
+                                    alert = Alert(AlertLevel.fatal, AlertDescription.bad_record_mac).unparse()
+                                    alert = TLSPlaintext(ContentType.alert, 0x0303, len(alert), alert).unparse()
+                                    sock.sendall(alert)
+                                    continue
+
                                 tls_inner_plaintext = TLSInnerPlaintext.from_bytes(decrypted)
                                 handshake = Handshake.from_bytes(tls_inner_plaintext.content)
                                 self.check_client_finished(handshake.msg)
                                 self.handshake_finished = True
                                 self.__key.make_application_key(self.__handshake_ctx.handshakes, Finished(handshake.msg))
+
+                                # New Session Ticket の送信
+                                self.send_new_session_ticket(sock)
                             case _:
                                 # fix: alert を送信する
                                 continue
@@ -197,8 +207,26 @@ class TLSServer:
         self.__key = TLSKey()
 
     def parse_application_data(self, data: bytes, sock) -> bytes:
-        decrypted = self.__key.decrypt_application_data(data, ContentType.application_data,
+        decrypted, valid = self.__key.decrypt_application_data(data, ContentType.application_data,
                                                         0x0303, len(data))
+        if not valid:
+            print("INVALID TAG!")
+            alert = Alert(AlertLevel.fatal, AlertDescription.bad_record_mac)
+            tls_inner_plaintext = TLSInnerPlaintext(alert.unparse(), ContentType.alert, b"")
+            tls_ciphertext_len = len(tls_inner_plaintext.unparse()) + 16
+            encrypted, tag = self.__key.encrypt_application_data(tls_inner_plaintext.unparse(),
+                                                                 ContentType.application_data,
+                                                                 0x0303,
+                                                                 tls_ciphertext_len)
+            encrypted += tag
+            tls_ciphertext = TLSCiphertext(
+                ContentType.application_data, 0x0303, len(encrypted),
+                encrypted
+            )
+            sock.send(tls_ciphertext.unparse())
+            self.__close = True
+            return b""
+
         tls_inner_plaintext = TLSInnerPlaintext.from_bytes(decrypted)
         match tls_inner_plaintext.type:
             case ContentType.application_data:
@@ -234,8 +262,6 @@ class TLSServer:
 
                         self.__close = True
 
-        self.__key.seq_upd_server()
-
     def send_application_data(self, data: bytes, sock):
         tls_inner_plaintext = TLSInnerPlaintext(data, ContentType.application_data, b"")
         tls_ciphertext_len = len(tls_inner_plaintext.unparse()) + 16
@@ -249,7 +275,29 @@ class TLSServer:
             encrypted
         )
         sock.send(tls_ciphertext.unparse())
-        self.__key.seq_upd_client()
+
+    def send_new_session_ticket(self, sock):
+        nst = NewSessionTicket(
+            86400,
+            secrets.randbits(32),
+            long_to_bytes(secrets.randbits(32)),
+            b"sample ticket",
+            [],
+        )
+        handshake = Handshake.make(nst)
+        data = handshake.unparse()
+        tls_inner_plaintext = TLSInnerPlaintext(data, ContentType.handshake, b"")
+        tls_ciphertext_len = len(tls_inner_plaintext.unparse()) + 16
+        encrypted, tag = self.__key.encrypt_application_data(tls_inner_plaintext.unparse(),
+                                                             ContentType.application_data,
+                                                             0x0303,
+                                                             tls_ciphertext_len)
+        encrypted += tag
+        tls_ciphertext = TLSCiphertext(
+            ContentType.application_data, 0x0303, len(encrypted),
+            encrypted
+        )
+        sock.send(tls_ciphertext.unparse())
 
     def make_server_hello(self, client_hello: ClientHello) -> ServerHello:
         legacy_version = 0x0303
