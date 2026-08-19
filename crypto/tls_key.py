@@ -268,6 +268,20 @@ class TLSConnectionKey:
             self.current_transcript_hash
         )
 
+    def update_application_secrets(self, side: Literal["server", "client"]):
+        if side == "server":
+            server = self.server_application_traffic_secret[0]
+            self.server_application_traffic_secret[0] = HKDF.HKDF_Expand_Label(
+                server, b"traffic upd", b"", SHA256_HASH_LEN
+            )
+            self.server_application_seq = 0
+        else:
+            client = self.client_application_traffic_secret[0]
+            self.client_application_traffic_secret[0] = HKDF.HKDF_Expand_Label(
+                client, b"traffic upd", b"", SHA256_HASH_LEN
+            )
+            self.client_application_seq = 0
+
     def derive_psk(self, ticket_nonce: bytes) -> bytes:
         assert self.resumption_master_secret is not None
         return self.Derive_Secret(self.resumption_master_secret, b"resumption", ticket_nonce)

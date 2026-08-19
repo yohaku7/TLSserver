@@ -2,7 +2,6 @@
 import asyncio
 import hashlib
 import secrets
-import socket
 from enum import Enum, auto
 
 import hexdump
@@ -13,7 +12,7 @@ from alert import Alert
 from alert.alert import AlertDescription, AlertLevel
 from common import (ContentType, ExtensionType, HandshakeType, NamedGroup,
                     SignatureScheme, ProtocolVersion)
-from crypto import TLSKey, elliptic, SessionTicket
+from crypto import elliptic, SessionTicket
 from crypto.elliptic import ECPrivateKey
 from crypto.tls_key import TLSConnectionKey, HKDF
 from extension.early_data import EarlyDataIndicationNewSessionTicket, EarlyDataIndicationEncryptedExtensions
@@ -24,7 +23,7 @@ from extension.key_share import (KeyShareEntry,
 from extension.pre_shared_key import PreSharedKeyServerHello
 from extension.psk_key_exchange_modes import PskKeyExchangeMode
 from extension.supported_versions import SupportedVersionsServerHello
-from handshake import (CipherSuite, EncryptedExtensions)
+from handshake import (CipherSuite, EncryptedExtensions, TLSKeyUpdate, KeyUpdateRequest)
 from handshake.certificate import Certificate
 from handshake.certificate_verify import CertificateVerify
 from handshake.client_hello import TLSClientHello
@@ -32,7 +31,7 @@ from handshake.finished import Finished
 from handshake.handshake import TLSHandshake
 from handshake.new_session_ticket import NewSessionTicket
 from handshake.server_hello import TLSServerHello
-from reader import StreamReader, BytesReader
+from reader import BytesReader
 from reader.validation_result import ValidationResult
 from record import TLSCiphertext, TLSPlaintext
 from record.tls_inner_plaintext import TLSInnerPlaintext
@@ -56,11 +55,12 @@ class TLSServerConnectionState(Enum):
 
 
 class TLSServerConnection:
-    def __init__(self, sock: socket.socket, session_ticket: SessionTicket):
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, session_ticket: SessionTicket):
         self.__connection_key = TLSConnectionKey()
-        self.__reader = StreamReader(sock)
-        self.__sock = sock
         self.__state = TLSServerConnectionState.START
+
+        self.__reader = reader
+        self.__writer = writer
 
         self.__session_ticket = session_ticket
 
@@ -70,65 +70,65 @@ class TLSServerConnection:
         self.__server_hello: TLSServerHello | None = None
         self.__end_of_early_data: bytes | None = None
 
-    def _process(self):
-        self._process_start()
+    async def _process(self):
+        await self._process_start()
 
         if self.__state == TLSServerConnectionState.ERROR:
-            self.__sock.close()
+            self.__writer.close()
             return
         assert self.__state == TLSServerConnectionState.RECVD_CH
-        self._process_recvd_ch()
+        await self._process_recvd_ch()
 
         if self.__state == TLSServerConnectionState.ERROR:
-            self.__sock.close()
+            self.__writer.close()
             return
         assert self.__state == TLSServerConnectionState.NEGOTIATED
-        self._process_negotiated()
+        await self._process_negotiated()
 
         if self.__state == TLSServerConnectionState.ERROR:
-            self.__sock.close()
+            self.__writer.close()
             return
         elif self.__state == TLSServerConnectionState.WAIT_EOED:
-            self._process_wait_eoed()
+            await self._process_wait_eoed()
 
         assert self.__state == TLSServerConnectionState.WAIT_FLIGHT2
-        self._process_wait_flight2()
+        await self._process_wait_flight2()
 
         if self.__state == TLSServerConnectionState.WAIT_CERT:
-            self._process_wait_cert()
+            await self._process_wait_cert()
 
             assert self.__state == TLSServerConnectionState.WAIT_CV
-            self._process_wait_cv()
+            await self._process_wait_cv()
 
         assert self.__state == TLSServerConnectionState.WAIT_FINISHED
-        self._process_wait_finished()
+        await self._process_wait_finished()
 
         assert self.__state == TLSServerConnectionState.CONNECTED
-        self._process_connected()
+        await self._process_connected()
 
         assert self.__state == TLSServerConnectionState.CLOSED
-        self.__sock.close()
+        self.__writer.close()
 
-    def _process_start(self):
+    async def _process_start(self):
         # Record の受信
-        data = self.__reader.read(5)
+        data = await self.__reader.readexactly(5)
         record_header = TLSRecordHeader.from_bytes(data).validate()
         if not record_header.success:
-            self.__error(record_header)
+            await self.__error(record_header)
         record_header = record_header.unwrap()
 
         # Record の検証
         if record_header.content_type != ContentType.handshake:
-            self.__error_unexpected_message()
+            await self.__error_unexpected_message()
 
         # Handshake の受信
-        data = self.__reader.read(4)
-        data += self.__reader.read(int.from_bytes(data[1:], "big"))
+        data = await self.__reader.readexactly(4)
+        data += await self.__reader.readexactly(int.from_bytes(data[1:], "big"))
         handshake = TLSHandshake.from_bytes(data).validate().unwrap()
 
         # Handshake の検証
         if handshake.msg_type != HandshakeType.client_hello:
-            self.__error_unexpected_message()
+            await self.__error_unexpected_message()
 
         self.__connection_key.update_transcript_hash(handshake.to_bytes())
 
@@ -136,11 +136,11 @@ class TLSServerConnection:
         self.__client_hello = client_hello
         self.__state = TLSServerConnectionState.RECVD_CH
 
-    def _process_recvd_ch(self):
+    async def _process_recvd_ch(self):
         # パラメータを選択する
         # Cipher Suite
         if CipherSuite.TLS_AES_128_GCM_SHA256 not in self.__client_hello.cipher_suites:
-            self.__error_illegal_parameter()
+            await self.__error_illegal_parameter()
 
         # Extensions
         server_ext = []
@@ -152,14 +152,14 @@ class TLSServerConnection:
             value = br.read_byte(length, "raw")
 
             if tag not in ExtensionType:
-                self.__error_illegal_parameter()
+                await self.__error_illegal_parameter()
                 return
 
             value = extensions[tag].from_bytes(value, **{"handshake_type": HandshakeType.client_hello})
             match ExtensionType(tag):
                 case ExtensionType.supported_versions:
                     if ProtocolVersion.TLS_1_3 not in value.version:
-                        self.__error_illegal_parameter()
+                        await self.__error_illegal_parameter()
                         return
                     server_ext.append(
                         ExtensionHeader(
@@ -169,15 +169,15 @@ class TLSServerConnection:
                     )
                 case ExtensionType.psk_key_exchange_modes:
                     if value.ke_modes != PskKeyExchangeMode.psk_dhe_ke:
-                        self.__error_illegal_parameter()
+                        await self.__error_illegal_parameter()
                         return
                 case ExtensionType.signature_algorithms:
                     if SignatureScheme.ecdsa_secp256r1_sha256 not in value.supported_signature_algorithms:
-                        self.__error_illegal_parameter()
+                        await self.__error_illegal_parameter()
                         return
                 case ExtensionType.ec_point_formats:
                     if ECPointFormat.uncompressed not in value.ec_point_formats:
-                        self.__error_illegal_parameter()
+                        await self.__error_illegal_parameter()
                         return
                 case ExtensionType.key_share:
                     self.__connection_key.exchange_key_x25519(value.client_shares[0])
@@ -194,7 +194,7 @@ class TLSServerConnection:
                     )
                 case ExtensionType.supported_groups:
                     if NamedGroup.x25519 not in value.named_group_list:
-                        self.__error_illegal_parameter()
+                        await self.__error_illegal_parameter()
                         return
                 case ExtensionType.encrypt_then_mac:
                     # TLS 1.3 では無視する。
@@ -246,11 +246,11 @@ class TLSServerConnection:
         self.__server_hello = server_hello
         self.__state = TLSServerConnectionState.NEGOTIATED
 
-    def _process_negotiated(self):
+    async def _process_negotiated(self):
         # Server Hello の送信
         data = self.__server_hello.to_bytes()
         handshake = TLSHandshake(HandshakeType.server_hello, len(data), data)
-        self.send_plain_record(handshake.to_bytes(), ContentType.handshake)
+        await self.send_plain_record(handshake.to_bytes(), ContentType.handshake)
 
         # 鍵の導出
         self.__connection_key.derive_early_secrets()
@@ -272,7 +272,8 @@ class TLSServerConnection:
         handshake = TLSHandshake(HandshakeType.encrypted_extensions, len(ee), ee).to_bytes()
         self.__connection_key.update_transcript_hash(handshake)
         ee_record = self.construct_encrypted_hs_record(handshake, ContentType.handshake)
-        self.__sock.sendall(ee_record)
+        self.__writer.write(ee_record)
+        await self.__writer.drain()
 
         data = b""
         if not self.__connection_key.psk:
@@ -294,7 +295,11 @@ class TLSServerConnection:
         hexdump.hexdump(finished)
         data += finished
 
-        self.__sock.sendall(data)
+        self.__writer.write(data)
+        await self.__writer.drain()
+
+        # application 鍵の導出
+        self.__connection_key.derive_application_secrets()
 
         # 0-RTT の分岐
         if self.__early_data_exist:
@@ -302,10 +307,10 @@ class TLSServerConnection:
         else:
             self.__state = TLSServerConnectionState.WAIT_FLIGHT2
 
-    def _process_wait_eoed(self):
+    async def _process_wait_eoed(self):
         # EndOfEarlyData を受信するまで Early Data を受信する
         while True:
-            pln = self._recv_encrypted_e_record()
+            pln = await self._recv_encrypted_e_record()
 
             if self.__state == TLSServerConnectionState.ERROR:
                 return
@@ -314,10 +319,13 @@ class TLSServerConnection:
 
             if pln.type == ContentType.application_data:
                 print(f"Early Data Received! {pln.content.decode()}")
+                # early data を echo する
+                self.__writer.write(self.construct_encrypted_ap_record(pln.content, ContentType.application_data))
+                await self.__writer.drain()
             elif pln.type == ContentType.handshake:
                 handshake = TLSHandshake.from_bytes(pln.content).validate().unwrap()
                 if handshake.msg_type == HandshakeType.end_of_early_data:
-                    self.__end_of_early_data = handshake.to_bytes()
+                    self.__connection_key.update_transcript_hash(handshake.to_bytes())
                     print("Early Data End.")
                     break
             else:
@@ -326,31 +334,24 @@ class TLSServerConnection:
 
         self.__state = TLSServerConnectionState.WAIT_FLIGHT2
 
-    def _process_wait_flight2(self):
+    async def _process_wait_flight2(self):
         # クライアントに認証を求めない
         self.__state = TLSServerConnectionState.WAIT_FINISHED
 
-    def _process_wait_cert(self):
+    async def _process_wait_cert(self):
         raise NotImplementedError
 
-    def _process_wait_cv(self):
+    async def _process_wait_cv(self):
         raise NotImplementedError
 
-    def _process_wait_finished(self):
+    async def _process_wait_finished(self):
         # Change Cipher Spec を受信する
         # fix: Change Cipher Spec が来なくてもエラーを出さないようにする
         if not self.__early_data_exist:
-            self._recv_encrypted_hs_record()
-
-        # application 鍵の導出
-        self.__connection_key.derive_application_secrets()
-
-        # EndOfEarlyData を Transcript Hash に含める
-        if self.__end_of_early_data:
-            self.__connection_key.update_transcript_hash(self.__end_of_early_data)
+            await self._recv_encrypted_hs_record()
 
         # Client Finished を受信する
-        tls_inner_plaintext = self._recv_encrypted_hs_record()
+        tls_inner_plaintext = await self._recv_encrypted_hs_record()
         handshake = TLSHandshake.from_bytes(tls_inner_plaintext.content)
         self.check_client_finished(handshake.msg)
 
@@ -360,13 +361,24 @@ class TLSServerConnection:
 
         self.__state = TLSServerConnectionState.CONNECTED
 
-    def _process_connected(self):
+    async def _process_connected(self):
         # Session Ticket の発行
-        self.send_new_session_ticket()
+        await self.send_new_session_ticket()
 
-        # echo するサーバ
+        # echo するサーバ。たまに KeyUpdate を送信する
+        cnt = 0
         while True:
-            pln = self._recv_encrypted_ap_record()
+            cnt += 1
+            if cnt % 5 == 0:
+                # 鍵の更新
+                key_upd = TLSKeyUpdate(KeyUpdateRequest.update_requested).to_bytes()
+                handshake = TLSHandshake(HandshakeType.key_update, len(key_upd), key_upd).to_bytes()
+                self.__writer.write(self.construct_encrypted_ap_record(handshake, ContentType.handshake))
+                await self.__writer.drain()
+                print("Send KeyUpdate.")
+                self.__connection_key.update_application_secrets("server")
+
+            pln = await self._recv_encrypted_ap_record()
             if pln is None:
                 return
             print(f"Received: {pln}")
@@ -377,31 +389,43 @@ class TLSServerConnection:
                     self.__state = TLSServerConnectionState.CLOSED
                     return
             elif pln.type == ContentType.application_data:
-                self.__sock.sendall(self.construct_encrypted_ap_record(pln.content, ContentType.application_data))
+                self.__writer.write(self.construct_encrypted_ap_record(pln.content, ContentType.application_data))
+                await self.__writer.drain()
+            elif pln.type == ContentType.handshake:
+                handshake = TLSHandshake.from_bytes(pln.content).validate().unwrap()
+                if handshake.msg_type != HandshakeType.key_update:
+                    self.__state = TLSServerConnectionState.ERROR
+                    return
+                key_upd = TLSKeyUpdate.from_bytes(handshake.msg).validate().unwrap()
+                if key_upd.request_update != KeyUpdateRequest.update_not_requested:
+                    self.__state = TLSServerConnectionState.ERROR
+                    return
+                self.__connection_key.update_application_secrets("client")
+                print("Key Updated!")
             else:
                 self.__state = TLSServerConnectionState.ERROR
                 return
 
-    def __error(self, validation: ValidationResult):
+    async def __error(self, validation: ValidationResult):
         self.__state = TLSServerConnectionState.ERROR
-        self.send_plain_alert(validation.alert)
+        await self.send_plain_alert(validation.alert)
 
-    def __error_unexpected_message(self):
+    async def __error_unexpected_message(self):
         self.__state = TLSServerConnectionState.ERROR
-        self.send_plain_alert(
+        await self.send_plain_alert(
             Alert(AlertLevel.fatal, AlertDescription.unexpected_message)
         )
 
-    def __error_illegal_parameter(self):
+    async def __error_illegal_parameter(self):
         self.__state = TLSServerConnectionState.ERROR
-        self.send_plain_alert(
+        await self.send_plain_alert(
             Alert(AlertLevel.fatal, AlertDescription.illegal_parameter)
         )
 
-    def _recv_encrypted_hs_record(self) -> TLSInnerPlaintext | None:
-        header = self.__reader.read(5)
+    async def _recv_encrypted_hs_record(self) -> TLSInnerPlaintext | None:
+        header = await self.__reader.readexactly(5)
         header = TLSRecordHeader.from_bytes(header).validate().unwrap()
-        data = self.__reader.read(header.length)
+        data = await self.__reader.readexactly(header.length)
 
         if header.content_type == ContentType.change_cipher_spec:
             print(f"=> Change Cipher Spec ({header.length} bytes)")
@@ -421,7 +445,8 @@ class TLSServerConnection:
                 print("[hs] INVALID TAG!")
                 alert = Alert(AlertLevel.fatal, AlertDescription.bad_record_mac).unparse()
                 alert = TLSPlaintext(ContentType.alert, 0x0303, len(alert), alert).unparse()
-                self.__sock.sendall(alert)
+                self.__writer.write(alert)
+                await self.__writer.drain()
                 self.__state = TLSServerConnectionState.ERROR
                 return None
 
@@ -431,10 +456,10 @@ class TLSServerConnection:
             self.__state = TLSServerConnectionState.ERROR
             return None
 
-    def _recv_encrypted_ap_record(self) -> TLSInnerPlaintext | None:
-        header = self.__reader.read(5)
+    async def _recv_encrypted_ap_record(self) -> TLSInnerPlaintext | None:
+        header = await self.__reader.readexactly(5)
         header = TLSRecordHeader.from_bytes(header).validate().unwrap()
-        data = self.__reader.read(header.length)
+        data = await self.__reader.readexactly(header.length)
 
         if header.content_type == ContentType.application_data:
             print(f"=> Application Data ({header.length} bytes)")
@@ -450,7 +475,8 @@ class TLSServerConnection:
                 print("[ap] INVALID TAG!")
                 alert = Alert(AlertLevel.fatal, AlertDescription.bad_record_mac).unparse()
                 alert = TLSPlaintext(ContentType.alert, 0x0303, len(alert), alert).unparse()
-                self.__sock.sendall(alert)
+                self.__writer.write(alert)
+                await self.__writer.drain()
                 self.__state = TLSServerConnectionState.ERROR
                 return None
 
@@ -460,10 +486,10 @@ class TLSServerConnection:
             self.__state = TLSServerConnectionState.ERROR
             return None
 
-    def _recv_encrypted_e_record(self) -> TLSInnerPlaintext | None:
-        header = self.__reader.read(5)
+    async def _recv_encrypted_e_record(self) -> TLSInnerPlaintext | None:
+        header = await self.__reader.readexactly(5)
         header = TLSRecordHeader.from_bytes(header).validate().unwrap()
-        data = self.__reader.read(header.length)
+        data = await self.__reader.readexactly(header.length)
 
         if header.content_type == ContentType.application_data:
             print(f"=> Application Data (Early Data) ({header.length} bytes)")
@@ -478,7 +504,8 @@ class TLSServerConnection:
                 print("[e] INVALID TAG!")
                 alert = Alert(AlertLevel.fatal, AlertDescription.bad_record_mac).unparse()
                 alert = TLSPlaintext(ContentType.alert, 0x0303, len(alert), alert).unparse()
-                self.__sock.sendall(alert)
+                self.__writer.write(alert)
+                await self.__writer.drain()
                 self.__state = TLSServerConnectionState.ERROR
                 return None
 
@@ -539,10 +566,11 @@ class TLSServerConnection:
         actual_verify_data = HKDF.HMAC(finished_key, self.__connection_key.current_transcript_hash)
         assert actual_verify_data == verify_data
 
-    def send_plain_record(self, data: bytes, content_type: ContentType):
+    async def send_plain_record(self, data: bytes, content_type: ContentType):
         header = TLSRecordHeader(content_type, 0x0303, len(data)).to_bytes()
         data = header + data
-        self.__sock.sendall(data)
+        self.__writer.write(data)
+        await self.__writer.drain()
 
     def construct_encrypted_hs_record(self, content: bytes, content_type: ContentType):
         tls_inner_plaintext = TLSInnerPlaintext(content, content_type, b"").unparse()
@@ -574,11 +602,11 @@ class TLSServerConnection:
                                        encrypted_record).unparse()
         return tls_ciphertext
 
-    def send_plain_alert(self, alert: Alert):
+    async def send_plain_alert(self, alert: Alert):
         data = alert.unparse()
         self.send_plain_record(data, ContentType.alert)
 
-    def send_new_session_ticket(self):
+    async def send_new_session_ticket(self):
         ticket_nonce = long_to_bytes(secrets.randbits(32))
         ticket_age_add = secrets.randbits(32)
         psk = self.__connection_key.derive_psk(ticket_nonce)
@@ -599,21 +627,39 @@ class TLSServerConnection:
         ).unparse()
 
         handshake = TLSHandshake(HandshakeType.new_session_ticket, len(nst), nst).to_bytes()
-        self.__sock.send(self.construct_encrypted_ap_record(handshake, ContentType.handshake))
+        self.__writer.write(self.construct_encrypted_ap_record(handshake, ContentType.handshake))
+        await self.__writer.drain()
 
 
-def main():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("localhost", 4433))
-    server.listen()
-    loop = asyncio.get_event_loop()
+async def handle_client(reader: asyncio.StreamReader,
+                        writer: asyncio.StreamWriter,
+                        session_ticket: SessionTicket):
+    conn = TLSServerConnection(reader, writer, session_ticket)
 
+    try:
+        await conn._process()
+    except asyncio.IncompleteReadError:
+        print("Client disconnected")
+    except Exception as e:
+        print(f"Connection error: {e}")
+    finally:
+        if not writer.is_closing():
+            writer.close()
+            await writer.wait_closed()
+
+
+async def main():
     session_ticket = SessionTicket()
 
-    # server = TLSServer(ip=4433)
-    # server.serve()
+    server = await asyncio.start_server(
+        lambda reader, writer: handle_client(reader, writer, session_ticket),
+        "localhost",
+        4433,
+    )
+    print("Listening on localhost:4433")
+    async with server:
+        await server.serve_forever()
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    asyncio.run(main())
