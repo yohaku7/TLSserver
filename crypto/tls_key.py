@@ -174,6 +174,7 @@ class TLSConnectionKey:
         self.server_application_seq: int = 0
         self.client_handshake_seq: int = 0
         self.server_handshake_seq: int = 0
+        self.client_early_seq: int = 0
 
         self.__secret_state: bytes | None = None
 
@@ -203,8 +204,14 @@ class TLSConnectionKey:
         sha256 = self.__transcript_hash.copy()
         return sha256.finalize()
 
-    def Derive_Secret(self, secret: bytes, label: bytes):
-        t_hash = self.current_transcript_hash
+    @staticmethod
+    def Transcript_Hash(data: bytes):
+        sha256 = hashes.Hash(hashes.SHA256())
+        sha256.update(data)
+        return sha256.finalize()
+
+    @staticmethod
+    def Derive_Secret(secret: bytes, label: bytes, t_hash: bytes):
         return HKDF.HKDF_Expand_Label(secret, label, t_hash, SHA256_HASH_LEN)
 
     def _calc_nonce(self, write_iv: bytes, seq: int):
@@ -213,28 +220,57 @@ class TLSConnectionKey:
         seq_bin = long_to_bytes(seq, iv_length)
         return bytes(x1 ^ x2 for x1, x2 in zip(write_iv, seq_bin))
 
-    def derive_early_secrets(self, psk: bytes | None):
-        psk = self.psk if self.psk is not None else psk
-        if psk is None:
+    def derive_early_secrets(self):
+        if self.psk is None:
             psk = long_to_bytes(0, SHA256_HASH_LEN)
         else:
-            assert len(psk) == SHA256_HASH_LEN
+            assert len(self.psk) == SHA256_HASH_LEN
+            psk = self.psk
 
         early_secret = HKDF.HKDF_Extract(long_to_bytes(0, SHA256_HASH_LEN), psk)
-        self.binder_key = self.Derive_Secret(early_secret, b"res binder")
-        self.client_early_traffic_secret = self.Derive_Secret(early_secret, b"c e traffic")
-        self.early_exporter_master_secret = self.Derive_Secret(early_secret, b"e exp master")
 
-        self.__secret_state = self.Derive_Secret(early_secret, b"derived")
+        t_hash = self.Transcript_Hash(b"")
+        self.binder_key = self.Derive_Secret(early_secret, b"res binder", t_hash)
+        self.__secret_state = self.Derive_Secret(early_secret, b"derived", t_hash)
+
+        t_hash = self.current_transcript_hash
+        self.client_early_traffic_secret = self.Derive_Secret(early_secret, b"c e traffic", t_hash)
+        self.early_exporter_master_secret = self.Derive_Secret(early_secret, b"e exp master", t_hash)
 
     def derive_handshake_secrets(self):
         assert self.x25519_shared_key is not None
 
         handshake_secret = HKDF.HKDF_Extract(self.__secret_state, self.x25519_shared_key)
-        self.client_handshake_traffic_secret = self.Derive_Secret(handshake_secret, b"c hs traffic")
-        self.server_handshake_traffic_secret = self.Derive_Secret(handshake_secret, b"s hs traffic")
 
-        self.__secret_state = self.Derive_Secret(handshake_secret, b"derived")
+        t_hash = self.current_transcript_hash
+        self.client_handshake_traffic_secret = self.Derive_Secret(handshake_secret, b"c hs traffic", t_hash)
+        self.server_handshake_traffic_secret = self.Derive_Secret(handshake_secret, b"s hs traffic", t_hash)
+
+        t_hash = self.Transcript_Hash(b"")
+        self.__secret_state = self.Derive_Secret(handshake_secret, b"derived", t_hash)
+
+    def derive_application_secrets(self):
+        self.master_secret = TLSKey.HKDF_Extract(self.__secret_state, b"\00" * 32)
+        t_hash = self.current_transcript_hash
+        self.client_application_traffic_secret.append(
+            self.Derive_Secret(self.master_secret, b"c ap traffic", t_hash)
+        )
+        self.server_application_traffic_secret.append(
+            self.Derive_Secret(self.master_secret, b"s ap traffic", t_hash)
+        )
+        self.exporter_master_secret = self.Derive_Secret(self.master_secret, b"exp master", t_hash)
+
+    def derive_resumption_secret(self):
+        assert self.master_secret is not None
+        self.resumption_master_secret = self.Derive_Secret(
+            self.master_secret,
+            b"res master",
+            self.current_transcript_hash
+        )
+
+    def derive_psk(self, ticket_nonce: bytes) -> bytes:
+        assert self.resumption_master_secret is not None
+        return self.Derive_Secret(self.resumption_master_secret, b"resumption", ticket_nonce)
 
     def encrypt_with_handshake_secret(self, data: bytes, additional_data: bytes, sender: Literal["server", "client"]):
         """
@@ -251,7 +287,11 @@ class TLSConnectionKey:
         write_key = HKDF.HKDF_Expand_Label(secret, b"key", b"", 16)
         write_iv = HKDF.HKDF_Expand_Label(secret, b"iv", b"", 12)
 
-        nonce = self._calc_nonce(write_iv, self.server_handshake_seq)
+        if sender == "server":
+            nonce = self._calc_nonce(write_iv, self.server_handshake_seq)
+        else:
+            nonce = self._calc_nonce(write_iv, self.client_handshake_seq)
+
         gcm = GCM(AES128(write_key), nonce)
         encrypted = gcm.encrypt(additional_data, data, 16)
 
@@ -280,7 +320,11 @@ class TLSConnectionKey:
         write_key = HKDF.HKDF_Expand_Label(secret, b"key", b"", 16)
         write_iv = HKDF.HKDF_Expand_Label(secret, b"iv", b"", 12)
 
-        nonce = self._calc_nonce(write_iv, self.server_handshake_seq)
+        if sender == "server":
+            nonce = self._calc_nonce(write_iv, self.server_handshake_seq)
+        else:
+            nonce = self._calc_nonce(write_iv, self.client_handshake_seq)
+
         gcm = GCM(AES128(write_key), nonce)
         decrypted, valid = gcm.decrypt(additional_data, ciphertext, tag)
 
@@ -291,6 +335,111 @@ class TLSConnectionKey:
                 self.client_handshake_seq += 1
 
         return decrypted, valid
+
+    def encrypt_with_application_secret(self, data: bytes, additional_data: bytes, sender: Literal["server", "client"]):
+        """
+        [sender]_application_traffic_secret を用い、RFC 8446 に則って data を暗号化する。
+        :param data: 暗号化するバイト列。
+        :param additional_data: AES-GCM の additional_data。
+        :param sender: 暗号鍵の [sender] の部分。
+        :return: 暗号文。
+        """
+        # RFC5116 §5.1
+        secret = self.server_application_traffic_secret[0] if sender == "server" else self.client_application_traffic_secret[0]
+        assert secret is not None
+
+        write_key = HKDF.HKDF_Expand_Label(secret, b"key", b"", 16)
+        write_iv = HKDF.HKDF_Expand_Label(secret, b"iv", b"", 12)
+
+        if sender == "server":
+            nonce = self._calc_nonce(write_iv, self.server_application_seq)
+        else:
+            nonce = self._calc_nonce(write_iv, self.client_application_seq)
+
+        gcm = GCM(AES128(write_key), nonce)
+        encrypted = gcm.encrypt(additional_data, data, 16)
+
+        if sender == "server":
+            self.server_application_seq += 1
+        else:
+            self.client_application_seq += 1
+
+        return encrypted
+
+    def decrypt_with_application_secret(self, data: bytes, additional_data: bytes, sender: Literal["server", "client"]):
+        """
+        [sender]_application_traffic_secret を用い、RFC 8446 に則って TLSCiphertext を復号する。
+        :param data: 暗号文。
+        :param additional_data: AES-GCM の additional_data。
+        :param sender: 暗号鍵の [sender] の部分。
+        :return: (平文, 認証に成功したか) のタプル。認証に失敗した場合、平文の中身は未定義。
+        """
+        tag = data[-16:]
+        ciphertext = data[:-16]
+
+        # RFC5116 §5.1
+        secret = self.server_application_traffic_secret[0] if sender == "server" else self.client_application_traffic_secret[0]
+        assert secret is not None
+
+        write_key = HKDF.HKDF_Expand_Label(secret, b"key", b"", 16)
+        write_iv = HKDF.HKDF_Expand_Label(secret, b"iv", b"", 12)
+
+        if sender == "server":
+            nonce = self._calc_nonce(write_iv, self.server_application_seq)
+        else:
+            nonce = self._calc_nonce(write_iv, self.client_application_seq)
+
+        gcm = GCM(AES128(write_key), nonce)
+        decrypted, valid = gcm.decrypt(additional_data, ciphertext, tag)
+
+        if valid:
+            if sender == "server":
+                self.server_application_seq += 1
+            else:
+                self.client_application_seq += 1
+
+        return decrypted, valid
+
+    def decrypt_with_early_secret(self, data: bytes, additional_data: bytes):
+        """
+        client_early_traffic_secret を用い、RFC 8446 に則って TLSCiphertext を復号する。
+        :param data: 暗号文。
+        :param additional_data: AES-GCM の additional_data。
+        :return: (平文, 認証に成功したか) のタプル。認証に失敗した場合、平文の中身は未定義。
+        """
+        tag = data[-16:]
+        ciphertext = data[:-16]
+
+        # RFC5116 §5.1
+        secret = self.client_early_traffic_secret
+        assert secret is not None
+
+        write_key = HKDF.HKDF_Expand_Label(secret, b"key", b"", 16)
+        write_iv = HKDF.HKDF_Expand_Label(secret, b"iv", b"", 12)
+
+        nonce = self._calc_nonce(write_iv, self.client_early_seq)
+        gcm = GCM(AES128(write_key), nonce)
+        decrypted, valid = gcm.decrypt(additional_data, ciphertext, tag)
+
+        if valid:
+            self.client_early_seq += 1
+
+        return decrypted, valid
+
+    @staticmethod
+    def load_x509_cert(data_path: str):
+        with open(data_path, "rb") as f:
+            cert = f.read()
+            cert = x509.load_pem_x509_certificate(cert)
+        return cert
+
+    @staticmethod
+    def load_x509_key(data_path: str):
+        with open(data_path, "rb") as f:
+            private_key = f.read()
+            private_key = load_pem_private_key(private_key, None)
+        return private_key
+
 
 class TLSKey:
     def __init__(self):
