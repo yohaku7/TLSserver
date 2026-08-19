@@ -2,6 +2,7 @@
 import hashlib
 import secrets
 import socket
+from enum import Enum, auto
 
 import hexdump
 from Crypto.Util.number import long_to_bytes
@@ -13,6 +14,8 @@ from common import (ContentType, ExtensionType, HandshakeType, NamedGroup,
                     SignatureScheme, ProtocolVersion)
 from crypto import HandshakeContext, TLSKey, elliptic, SessionTicket
 from crypto.elliptic import ECPrivateKey
+from crypto.tls_key import TLSConnectionKey
+from extension.early_data import EarlyDataIndicationNewSessionTicket
 from extension.ec_point_formats import ECPointFormat
 from extension.extension_parser import ExtensionHeader, extensions
 from extension.key_share import (KeyShareClientHello, KeyShareEntry,
@@ -24,11 +27,259 @@ from handshake import (CipherSuite, ClientHello, EncryptedExtensions,
                        Handshake, ServerHello)
 from handshake.certificate import Certificate
 from handshake.certificate_verify import CertificateVerify
+from handshake.client_hello import TLSClientHello
 from handshake.finished import Finished
+from handshake.handshake import TLSHandshake
 from handshake.new_session_ticket import NewSessionTicket
-from reader import StreamReader
+from handshake.server_hello import TLSServerHello
+from reader import StreamReader, BytesReader
+from reader.validation_result import ValidationResult
 from record import TLSCiphertext, TLSPlaintext
 from record.tls_inner_plaintext import TLSInnerPlaintext
+from record.tls_record import TLSRecordHeader
+
+
+class TLSServerConnectionState(Enum):
+    # refer: RFC8446 Appendix A.2
+    START = auto()
+    RECVD_CH = auto()
+    NEGOTIATED = auto()
+    WAIT_EOED = auto()
+    WAIT_FLIGHT2 = auto()
+    WAIT_CERT = auto()
+    WAIT_CV = auto()
+    WAIT_FINISHED = auto()
+    CONNECTED = auto()
+
+    ERROR = auto()
+
+
+class TLSServerConnection:
+    def __init__(self, sock: socket.socket):
+        self.__key = TLSKey()
+        self.__connection_key = TLSConnectionKey()
+        self.__reader = StreamReader(sock)
+        self.__sock = sock
+        self.__handshake_ctx = HandshakeContext([])
+        self.__state = TLSServerConnectionState.START
+
+        self.__client_hello: TLSClientHello | None = None
+        self.__server_hello: TLSServerHello | None = None
+
+    def _process(self):
+        self._process_start()
+
+        if self.__state == TLSServerConnectionState.ERROR:
+            self.__sock.close()
+            return
+        assert self.__state == TLSServerConnectionState.RECVD_CH
+        self._process_recvd_ch()
+
+        if self.__state == TLSServerConnectionState.ERROR:
+            self.__sock.close()
+            return
+        assert self.__state == TLSServerConnectionState.NEGOTIATED
+        self._process_negotiated()
+
+    def _process_start(self):
+        # Record の受信
+        data = self.__reader.read(5)
+        record_header = TLSRecordHeader.from_bytes(data).validate()
+        if not record_header.success:
+            self.__error(record_header)
+        record_header = record_header.unwrap()
+
+        # Record の検証
+        if record_header.content_type != ContentType.handshake:
+            self.__error_unexpected_message()
+
+        # Handshake の受信
+        data = self.__reader.read(4)
+        data += self.__reader.read(int.from_bytes(data[1:], "big"))
+        hexdump.hexdump(data)
+        handshake = TLSHandshake.from_bytes(data).validate().unwrap()
+
+        # Handshake の検証
+        if handshake.msg_type != HandshakeType.client_hello:
+            self.__error_unexpected_message()
+
+        self.__connection_key.update_transcript_hash(handshake.to_bytes())
+
+        client_hello = TLSClientHello.from_bytes(handshake.msg).validate().unwrap()
+        self.__client_hello = client_hello
+        self.__state = TLSServerConnectionState.RECVD_CH
+
+    def _process_recvd_ch(self):
+        # パラメータを選択する
+        # Cipher Suite
+        if CipherSuite.TLS_AES_128_GCM_SHA256 not in self.__client_hello.cipher_suites:
+            self.__error_illegal_parameter()
+
+        # Extensions
+        server_ext = []
+
+        br = BytesReader(self.__client_hello.extensions)
+        while br.rest_length > 0:
+            tag = br.read_byte(2, "int")
+            length = br.read_byte(2, "int")
+            value = br.read_byte(length, "raw")
+
+            if tag not in ExtensionType:
+                self.__error_illegal_parameter()
+                return
+
+            value = extensions[tag].from_bytes(value, **{"handshake_type": HandshakeType.client_hello})
+            match ExtensionType(tag):
+                case ExtensionType.supported_versions:
+                    if ProtocolVersion.TLS_1_3 not in value.version:
+                        self.__error_illegal_parameter()
+                        return
+                    server_ext.append(
+                        ExtensionHeader(
+                            ExtensionType.supported_versions,
+                            SupportedVersionsServerHello(ProtocolVersion.TLS_1_3).unparse(),
+                        ).unparse()
+                    )
+                case ExtensionType.psk_key_exchange_modes:
+                    if value.ke_modes != PskKeyExchangeMode.psk_dhe_ke:
+                        self.__error_illegal_parameter()
+                        return
+                case ExtensionType.signature_algorithms:
+                    if SignatureScheme.ecdsa_secp256r1_sha256 not in value.supported_signature_algorithms:
+                        self.__error_illegal_parameter()
+                        return
+                case ExtensionType.ec_point_formats:
+                    if ECPointFormat.uncompressed not in value.ec_point_formats:
+                        self.__error_illegal_parameter()
+                        return
+                case ExtensionType.key_share:
+                    self.__connection_key.exchange_key_x25519(value.client_shares[0])
+                    server_ext.append(
+                        ExtensionHeader(
+                            ExtensionType.key_share,
+                            KeyShareServerHello(
+                                server_share=KeyShareEntry(
+                                    group=NamedGroup.x25519,
+                                    key_exchange=self.__connection_key.x25519.public_key.encode()
+                                )
+                            ).unparse()
+                        ).unparse()
+                    )
+                case ExtensionType.supported_groups:
+                    if NamedGroup.x25519 not in value.named_group_list:
+                        self.__error_illegal_parameter()
+                        return
+                case ExtensionType.encrypt_then_mac:
+                    # TLS 1.3 では無視する。
+                    continue
+                case ExtensionType.extended_master_secret:
+                    # TLS 1.3 では無視する。
+                    continue
+                case ExtensionType.session_ticket:
+                    # TODO: 実装
+                    continue
+                case ExtensionType.key_share:
+                    # TODO: 実装
+                    continue
+                case ExtensionType.pre_shared_key:
+                    server_ext.append(
+                        ExtensionHeader(
+                            ExtensionType.pre_shared_key,
+                            PreSharedKeyServerHello(
+                                selected_identity=0,
+                            ).unparse()
+                        ).unparse()
+                    )
+                    # TODO: binder 値の検証
+                    # ticket の検証と psk の復号
+                    psk, ticket_age_add = self.__session_ticket.decrypt_ticket(value.identities[0].identity)
+                    # チケット年齢の検証
+                    age = value.identities[0].obfuscated_ticket_age
+                    age %= 2 ** 32
+                    age -= ticket_age_add
+                    print("Ticket age:", age)
+                    assert age <= 86400 * 1000
+                    self.__psk = psk
+                case ExtensionType.early_data:
+                    self.__early_data_exist = True
+                case _:
+                    # 無視する
+                    continue
+
+        server_ext = b"".join([x for x in server_ext])
+
+        server_hello = TLSServerHello(
+            0x0303,
+            secrets.token_bytes(32),
+            self.__client_hello.legacy_session_id,
+            cipher_suite=CipherSuite.TLS_AES_128_GCM_SHA256,
+            legacy_compression_method=0,
+            extensions=server_ext,
+        )
+        self.__server_hello = server_hello
+        self.__state = TLSServerConnectionState.NEGOTIATED
+
+    def _process_negotiated(self):
+        # Server Hello の送信
+        data = self.__server_hello.to_bytes()
+        handshake = TLSHandshake(HandshakeType.server_hello, len(data), data)
+        self.__connection_key.update_transcript_hash(handshake.to_bytes())
+        self.send_plain_record(handshake.to_bytes(), ContentType.handshake)
+
+        # 鍵の導出
+        self.__connection_key.derive_early_secrets(None)
+        self.__connection_key.derive_handshake_secrets()
+
+        print(self.__connection_key.server_handshake_traffic_secret.hex())
+
+        # Encrypted Extensions の送信
+        enc_ext = []
+        ee = EncryptedExtensions(enc_ext).unparse()
+        handshake = TLSHandshake(HandshakeType.encrypted_extensions, len(ee), ee).to_bytes()
+        self.__connection_key.update_transcript_hash(handshake)
+        ee_record = self.construct_encrypted_record(handshake, ContentType.handshake)
+        self.__sock.sendall(ee_record)
+
+    def __error(self, validation: ValidationResult):
+        self.__state = TLSServerConnectionState.ERROR
+        self.send_plain_alert(validation.alert)
+
+    def __error_unexpected_message(self):
+        self.__state = TLSServerConnectionState.ERROR
+        self.send_plain_alert(
+            Alert(AlertLevel.fatal, AlertDescription.unexpected_message)
+        )
+
+    def __error_illegal_parameter(self):
+        self.__state = TLSServerConnectionState.ERROR
+        self.send_plain_alert(
+            Alert(AlertLevel.fatal, AlertDescription.illegal_parameter)
+        )
+
+    def send_plain_record(self, data: bytes, content_type: ContentType):
+        header = TLSRecordHeader(content_type, 0x0303, len(data)).to_bytes()
+        data = header + data
+        hexdump.hexdump(data)
+        self.__sock.sendall(data)
+
+    def construct_encrypted_record(self, content: bytes, content_type: ContentType):
+        tls_inner_plaintext = TLSInnerPlaintext(content, content_type, b"").unparse()
+        tls_ciphertext_header = TLSRecordHeader(ContentType.application_data,
+                                                0x0303,
+                                                len(tls_inner_plaintext) + 16).to_bytes()
+        encrypted_record, tag = self.__connection_key.encrypt_with_handshake_secret(tls_inner_plaintext,
+                                                                               tls_ciphertext_header,
+                                                                               "server")
+        encrypted_record += tag
+        tls_ciphertext = TLSCiphertext(ContentType.application_data,
+                                       0x0303,
+                                       len(encrypted_record),
+                                       encrypted_record).unparse()
+        return tls_ciphertext
+
+    def send_plain_alert(self, alert: Alert):
+        data = alert.unparse()
+        self.send_plain_record(data, ContentType.alert)
 
 
 class TLSServer:
@@ -41,23 +292,10 @@ class TLSServer:
         self.__key = TLSKey()
         self.__session_ticket = SessionTicket()
         self.__psk = None
+        self.__early_data_exist = False
         self.__handshake_ctx = HandshakeContext([])
         self.handshake_finished = False
         self.__close = False
-
-    # def accept_and_recv(self):
-    #     conn, addr = self.__sock.accept()
-    #     self.__conn = conn
-    #     print(f"接続：{addr}")
-    #     data = self.__conn.recv(65565)
-    #     return data
-
-    # def send(self, data: bytes):
-    #     self.__sock.sendall(data)
-
-    # def recv(self):
-    #     data = self.__conn.recv(65565)
-    #     return data
 
     def serve(self):
         print("接続を待っています…")
@@ -65,6 +303,10 @@ class TLSServer:
         while True:
             sock, addr = self.__sock.accept()
             sr = StreamReader(sock)
+
+            # conn = TLSServerConnection(sock)
+            # conn._process()
+            # return
 
             with sock:
                 while True:
@@ -75,9 +317,12 @@ class TLSServer:
 
                     if not self.handshake_finished:
                         # 暗号化されていない Record 層の処理
-                        content_type = ContentType(sr.read_int(1))
-                        legacy_record_version = sr.read_int(2)
-                        length = sr.read_int(2)
+                        data = sr.read(5)
+                        record_header = TLSRecordHeader.from_bytes(data).validate().unwrap()
+                        print(record_header)
+                        content_type = record_header.content_type
+                        legacy_record_version = record_header.legacy_record_version
+                        length = record_header.length
 
                         # 高レベルのプロトコルの処理
                         match content_type:
@@ -161,6 +406,18 @@ class TLSServer:
 
                                 print("this server will ignore this.")
                             case ContentType.application_data:
+                                # if self.__early_data_exist:
+                                #     # Early Data の処理
+                                #     length = sr.read_int(2)
+                                #     data = sr.read(length)
+                                #     received = self.parse_early_data(data, sock)
+                                #
+                                #     if received:
+                                #         print(f"Early Data: {received.decode()}")
+                                #
+                                #     self.__early_data_exist = False
+                                #     continue
+
                                 print(f"=> Application Data ({length} bytes)")
                                 data = sr.read(length)
                                 hexdump.hexdump(data)
@@ -201,13 +458,36 @@ class TLSServer:
 
                         if received:
                             print(f"{received.decode()}")
-                            self.send_application_data(received, sock)
+                            # self.send_application_data(received, sock)
 
     def reset(self):
         self.handshake_finished = False
         self.__close = False
         self.__handshake_ctx = HandshakeContext([])
         self.__key = TLSKey()
+
+    def parse_early_data(self, data: bytes, sock) -> bytes | None:
+        decrypted, valid = self.__key.decrypt_early_data(data)
+        if not valid:
+            print("INVALID TAG!")
+            alert = Alert(AlertLevel.fatal, AlertDescription.bad_record_mac)
+            tls_inner_plaintext = TLSInnerPlaintext(alert.unparse(), ContentType.alert, b"")
+            tls_ciphertext_len = len(tls_inner_plaintext.unparse()) + 16
+            encrypted, tag = self.__key.encrypt_application_data(tls_inner_plaintext.unparse(),
+                                                                 ContentType.application_data,
+                                                                 0x0303,
+                                                                 tls_ciphertext_len)
+            encrypted += tag
+            tls_ciphertext = TLSCiphertext(
+                ContentType.application_data, 0x0303, len(encrypted),
+                encrypted
+            )
+            sock.send(tls_ciphertext.unparse())
+            self.__close = True
+            return None
+
+        tls_inner_plaintext = TLSInnerPlaintext.from_bytes(decrypted)
+        return tls_inner_plaintext.content
 
     def parse_application_data(self, data: bytes, sock) -> bytes | None:
         decrypted, valid = self.__key.decrypt_application_data(data, ContentType.application_data,
@@ -289,14 +569,22 @@ class TLSServer:
 
     def send_new_session_ticket(self, sock):
         ticket_nonce = long_to_bytes(secrets.randbits(32))
+        ticket_age_add = secrets.randbits(32)
         psk = self.__key.make_psk(ticket_nonce)
-        ticket = self.__session_ticket.create_ticket(psk)
+        ticket = self.__session_ticket.create_ticket(ticket_age_add, psk)
         nst = NewSessionTicket(
             86400,
-            secrets.randbits(32),
+            ticket_age_add,
             ticket_nonce,
             ticket,
-            [],
+            [
+                ExtensionHeader(
+                    ExtensionType.early_data,
+                    EarlyDataIndicationNewSessionTicket(
+                        max_early_data_size=2048,
+                    ).unparse(),
+                )
+            ],
         )
 
         handshake = Handshake.make(nst)
@@ -324,7 +612,6 @@ class TLSServer:
         cipher_suite = CipherSuite.TLS_AES_128_GCM_SHA256
         legacy_compression_method = 0
 
-        # extensions の作成
         server_extensions = []
         for ext in client_hello.extensions:
             if ext.type in extensions.keys():
@@ -383,17 +670,102 @@ class TLSServer:
                         )
                         # TODO: binder 値の検証
                         # ticket の検証と psk の復号
-                        psk = self.__session_ticket.decrypt_psk(content.identities[0].identity)
+                        psk, ticket_age_add = self.__session_ticket.decrypt_ticket(content.identities[0].identity)
+                        # チケット年齢の検証
+                        age = content.identities[0].obfuscated_ticket_age
+                        age %= 2 ** 32
+                        age -= ticket_age_add
+                        print("Ticket age:", age)
+                        assert age <= 86400 * 1000
                         self.__psk = psk
+                    case ExtensionType.early_data:
+                        self.__early_data_exist = True
                     case _:
                         print(ExtensionType(ext.type).name)
             else:
                 print(f"Extensionを処理できません。{ext}")
+
         return ServerHello(
             legacy_version, random,
             legacy_session_id_echo, cipher_suite,
             legacy_compression_method, server_extensions
         )
+
+    def check_client_extension(self, ch_ext: list[ExtensionHeader]) -> list[ExtensionHeader]:
+        # extensions の作成
+        server_extensions = []
+        for ext in ch_ext:
+            if ext.type in extensions.keys():
+                content = extensions[ext.type].from_bytes(ext.content, **{"handshake_type": HandshakeType.client_hello})
+                match ext.type:
+                    case ExtensionType.supported_versions:
+                        assert ProtocolVersion.TLS_1_3 in content.version
+                        server_extensions.append(
+                            ExtensionHeader(
+                                ExtensionType.supported_versions,
+                                SupportedVersionsServerHello(ProtocolVersion.TLS_1_3).unparse()
+                            )
+                        )
+                    case ExtensionType.psk_key_exchange_modes:
+                        assert content.ke_modes == PskKeyExchangeMode.psk_dhe_ke
+                    case ExtensionType.signature_algorithms:
+                        assert SignatureScheme.ecdsa_secp256r1_sha256 in content.supported_signature_algorithms
+                    case ExtensionType.ec_point_formats:
+                        assert ECPointFormat.uncompressed in content.ec_point_formats
+                    case ExtensionType.key_share:
+                        con = KeyShareClientHello.from_bytes(ext.content)
+                        self.__key.exchange_key_x25519(con.client_shares[0])
+                        server_extensions.append(
+                            ExtensionHeader(
+                                ExtensionType.key_share,
+                                KeyShareServerHello(
+                                    server_share=KeyShareEntry(
+                                        group=NamedGroup.x25519,
+                                        key_exchange=self.__key.x25519.public_key.encode()
+                                    )
+                                ).unparse()
+                            )
+                        )
+                    case ExtensionType.supported_groups:
+                        assert NamedGroup.x25519 in content.named_group_list
+                    case ExtensionType.encrypt_then_mac:
+                        # TLS 1.3 では無視する。
+                        continue
+                    case ExtensionType.extended_master_secret:
+                        # TLS 1.3 では無視する。
+                        continue
+                    case ExtensionType.session_ticket:
+                        # TODO: 実装
+                        continue
+                    case ExtensionType.key_share:
+                        # TODO: 実装
+                        continue
+                    case ExtensionType.pre_shared_key:
+                        server_extensions.append(
+                            ExtensionHeader(
+                                ExtensionType.pre_shared_key,
+                                PreSharedKeyServerHello(
+                                    selected_identity=0,
+                                ).unparse()
+                            )
+                        )
+                        # TODO: binder 値の検証
+                        # ticket の検証と psk の復号
+                        psk, ticket_age_add = self.__session_ticket.decrypt_ticket(content.identities[0].identity)
+                        # チケット年齢の検証
+                        age = content.identities[0].obfuscated_ticket_age
+                        age %= 2 ** 32
+                        age -= ticket_age_add
+                        print("Ticket age:", age)
+                        assert age <= 86400 * 1000
+                        self.__psk = psk
+                    case ExtensionType.early_data:
+                        self.__early_data_exist = True
+                    case _:
+                        print(ExtensionType(ext.type).name)
+            else:
+                print(f"Extensionを処理できません。{ext}")
+            return server_extensions
 
     def make_encrypted_extensions(self):
         ee = EncryptedExtensions([])

@@ -4,7 +4,7 @@ from enum import IntEnum
 from reader import new
 from tls_object import TLSIntEnum
 
-__all__ = ["AlertLevel", "Alert"]
+__all__ = ["AlertLevel", "Alert", "AlertDescription"]
 
 
 class AlertLevel(TLSIntEnum, IntEnum):

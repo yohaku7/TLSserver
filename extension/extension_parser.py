@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from common import ExtensionType
 from reader import new
+from .early_data import EarlyData
 
 from .ec_point_formats import ECPointFormats
 from .encrypt_then_mac import EncryptThenMAC
@@ -37,6 +38,7 @@ extensions: dict[ExtensionType, type[new.TLSObject]] = {
     ExtensionType.psk_key_exchange_modes: PskKeyExchangeModes,
     ExtensionType.record_size_limit: RecordSizeLimit,
     ExtensionType.pre_shared_key: PreSharedKey,
+    ExtensionType.early_data: EarlyData,
 }
 
 

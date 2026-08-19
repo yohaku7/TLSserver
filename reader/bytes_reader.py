@@ -107,7 +107,11 @@ class StreamReader:
         return int.from_bytes(self.read(n), endian)
 
     def read_variable_length(self, length_header_size: int) -> bytes:
-        """可変長ベクトルの長さを読み、本体を読む"""
+        """
+        可変長ベクトルの長さを読み、ベクトルの中身を返す。
+        :param length_header_size: 可変長ベクトルの長さヘッダのサイズ（byte 単位）
+        :return: 可変長ベクトルの中身
+        """
         vector_len = int.from_bytes(self.read(length_header_size))
         if vector_len == 0:  # 空ベクトル
             return b""
